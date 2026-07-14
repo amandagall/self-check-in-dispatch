@@ -111,16 +111,22 @@ module.exports = async (req, res) => {
   const currentStep = fields['Current Step'] || 0;
 
   if (mode === 'Hold') {
-    await sendSms(from, to, HOLDING_MESSAGE);
-    await updateExperience(id, { 'Last Inbound At': now, 'Last Reply': body });
+    if (!fields['Hold Notice Sent']) {
+      await sendSms(from, to, HOLDING_MESSAGE);
+      await updateExperience(id, { 'Hold Notice Sent': true, 'Last Inbound At': now, 'Last Reply': body });
+    } else {
+      await updateExperience(id, { 'Last Inbound At': now, 'Last Reply': body });
+    }
     return twiml(res);
   }
 
-  if (!ADVANCE_KEYWORDS.includes(body)) {
-    await sendSms(process.env.AMANDA_PHONE_NUMBER, to, `${fields['Customer Name']} replied: "${body}"`);
-    await updateExperience(id, { 'Last Reply': body, 'Last Inbound At': now });
-    return twiml(res);
-  }
+  await sendSms(from, to, nextMessage);
+  await updateExperience(id, {
+    'Current Step': currentStep + 1,
+    'Last Sent At': now,
+    'Last Inbound At': now,
+    'Hold Notice Sent': false,
+  });
 
   if (lastSentAt && Date.now() - lastSentAt.getTime() < DOUBLE_TAP_WINDOW_MS) {
     return twiml(res); // double-tap guard — silently ignore
