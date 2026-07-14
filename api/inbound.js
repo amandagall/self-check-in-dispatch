@@ -105,7 +105,7 @@ module.exports = async (req, res) => {
     return twiml(res);
   }
 
-  const { id, fields } = record;
+ const { id, fields } = record;
   const mode = fields['Mode'] || 'Auto';
   const lastSentAt = fields['Last Sent At'] ? new Date(fields['Last Sent At']) : null;
   const currentStep = fields['Current Step'] || 0;
@@ -120,13 +120,11 @@ module.exports = async (req, res) => {
     return twiml(res);
   }
 
-  await sendSms(from, to, nextMessage);
-  await updateExperience(id, {
-    'Current Step': currentStep + 1,
-    'Last Sent At': now,
-    'Last Inbound At': now,
-    'Hold Notice Sent': false,
-  });
+  if (!ADVANCE_KEYWORDS.includes(body)) {
+    await sendSms(process.env.AMANDA_PHONE_NUMBER, to, `${fields['Customer Name']} replied: "${body}"`);
+    await updateExperience(id, { 'Last Reply': body, 'Last Inbound At': now });
+    return twiml(res);
+  }
 
   if (lastSentAt && Date.now() - lastSentAt.getTime() < DOUBLE_TAP_WINDOW_MS) {
     return twiml(res); // double-tap guard — silently ignore
@@ -143,6 +141,7 @@ module.exports = async (req, res) => {
     'Current Step': currentStep + 1,
     'Last Sent At': now,
     'Last Inbound At': now,
+    'Hold Notice Sent': false,
   });
   return twiml(res);
-};
+}; 
