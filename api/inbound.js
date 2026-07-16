@@ -55,8 +55,7 @@ async function airtable(path, options) {
 
 async function findExperienceByPhone(rawPhone) {
   const digits = rawPhone.replace(/\D/g, '').slice(-10);
-  const formula = 'AND({Status} != "Complete", RIGHT(REGEX_REPLACE({Mobile (from Mobile)} & "", "[^0-9]", ""), 10) = "' + digits + '")';
-  const data = await airtable('?filterByFormula=' + encodeURIComponent(formula) + '&maxRecords=1');
+const formula = 'AND(OR({Status} != "Complete", {Awaiting Feedback}), RIGHT(REGEX_REPLACE({Mobile (from Mobile)} & "", "[^0-9]", ""), 10) = "' + digits + '")';  const data = await airtable('?filterByFormula=' + encodeURIComponent(formula) + '&maxRecords=1');
   return (data.records && data.records[0]) || null;
 }
 
