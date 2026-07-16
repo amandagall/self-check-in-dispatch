@@ -74,7 +74,7 @@ module.exports = async (req, res) => {
     }
     await airtable(`/${recordId}`, {
       method: 'PATCH',
-      body: JSON.stringify({ fields: { 'Last Sent At': new Date().toISOString() } }),
+      body: JSON.stringify({ fields: { 'Last Manual Reply At': new Date().toISOString() } }),
     });
     res.status(200).json({ ok: true, sid: twilioResult.sid });
   } catch (err) {

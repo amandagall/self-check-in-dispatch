@@ -228,12 +228,18 @@ function isRecordHold(f) {
 // Stalled = mid-experience (already started, not finished, not just
 // "tomorrow and not started yet"), and no activity in either direction for
 // 90+ minutes.
+function latestActivityIso(f) {
+  var candidates = [f['Last Sent At'], f['Last Inbound At'], f['Last Manual Reply At']];
+  var latest = '';
+  for (var i = 0; i < candidates.length; i++) {
+    var v = candidates[i] || '';
+    if (v && (!latest || v > latest)) latest = v;
+  }
+  return latest;
+}
 function isRecordStalled(f, isTomorrow) {
   var step = f['Current Step'] != null ? f['Current Step'] : 0;
-  var lastSent = f['Last Sent At'] || '';
-  var lastInbound = f['Last Inbound At'] || '';
-  var lastActivityIso = (lastInbound && (!lastSent || lastInbound > lastSent)) ? lastInbound : lastSent;
-  var minsIdle = minutesSince(lastActivityIso);
+  var minsIdle = minutesSince(latestActivityIso(f));
   return !isTomorrow && !isRecordComplete(f) && !isRecordHold(f) && step > 0 && minsIdle !== null && minsIdle >= STALL_MINUTES;
 }
 // A "problem" card is anything that needs Amanda's eyes right now: paused
@@ -580,8 +586,7 @@ function buildCard(rec, idx, isTomorrow) {
   var isWaiting = (status === 'New' || status === 'Ready' || status === 'Curating') && step === 0;
   var isHold = isRecordHold(f);
   var isStalled = isRecordStalled(f, isTomorrow);
-  var lastActivityIso = (lastInbound && (!lastSent || lastInbound > lastSent)) ? lastInbound : lastSent;
-  var minsIdle = minutesSince(lastActivityIso);
+  var minsIdle = minutesSince(latestActivityIso(f));
 
   var avatarCls = isHold ? 'hold' : isComplete ? 'complete' : isTomorrow ? 'tomorrow' : isWaiting ? 'waiting' : '';
   var badgeCls = isComplete ? 'done' : isTomorrow ? 'tmrw' : isWaiting ? 'wt' : 'ip';
@@ -606,8 +611,11 @@ function buildCard(rec, idx, isTomorrow) {
 
   // Last activity: what the customer last texted, and when -- or, if they
   // haven't replied yet, when we last sent something to them.
+  var lastManualReply = f['Last Manual Reply At'] || '';
   var activityHtml = '';
-  if (lastReply) {
+  if (lastManualReply && lastManualReply > (lastInbound || '') && lastManualReply > (lastSent || '')) {
+    activityHtml = '<div class="activity-row"><span class="activity-lbl">You replied</span><span class="activity-time">' + fmtTime(lastManualReply) + '</span></div>';
+  } else if (lastReply) {
     activityHtml = '<div class="activity-row"><span class="activity-lbl">Last reply</span><span class="reply-bubble">' + esc(lastReply) + '</span>' + (lastInbound ? '<span class="activity-time">' + fmtTime(lastInbound) + '</span>' : '') + '</div>';
   } else if (lastSent) {
     activityHtml = '<div class="activity-row"><span class="activity-lbl">Sent, awaiting reply</span><span class="activity-time">' + fmtTime(lastSent) + '</span></div>';
