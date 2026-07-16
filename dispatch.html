@@ -80,7 +80,9 @@ input[type=password]:focus { border-color: var(--slate); }
 .activity-time { font-size: 11px; color: var(--greige); }
 .msg-preview { background: var(--parchment); border-left: 2px solid var(--slate); border-radius: 0 6px 6px 0; padding: 12px 14px; margin-bottom: 14px; }
 .msg-lbl { font-size: 10px; letter-spacing: 0.08em; color: var(--greige); text-transform: uppercase; margin-bottom: 6px; }
-.msg-text { font-size: 13px; line-height: 1.6; }
+.msg-text { font-size: 13px; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.msg-text.expanded { display: block; -webkit-line-clamp: unset; overflow: visible; max-height: 260px; overflow-y: auto; }
+.msg-toggle { display: inline-block; margin-top: 6px; font-size: 11px; color: var(--slate); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .schedule-note { font-size: 12px; color: var(--greige); }
 .btn-feedback { padding: 8px 16px; background: var(--success-bg); color: var(--success); border: 1px solid rgba(74,124,89,0.3); border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; }
 .complete-section { margin-top: 20px; }
@@ -193,16 +195,39 @@ function isRecordComplete(f) {
   var totalMsgs = computeTotalMsgs(f);
   return status === 'Complete' || (step >= totalMsgs && totalMsgs > 0);
 }
+function isRecordHold(f) {
+  return (f['Mode'] || 'Auto') === 'Hold';
+}
+// Stalled = mid-experience (already started, not finished, not just
+// "tomorrow and not started yet"), and no activity in either direction for
+// 90+ minutes.
+function isRecordStalled(f, isTomorrow) {
+  var step = f['Current Step'] != null ? f['Current Step'] : 0;
+  var lastSent = f['Last Sent At'] || '';
+  var lastInbound = f['Last Inbound At'] || '';
+  var lastActivityIso = (lastInbound && (!lastSent || lastInbound > lastSent)) ? lastInbound : lastSent;
+  var minsIdle = minutesSince(lastActivityIso);
+  return !isTomorrow && !isRecordComplete(f) && !isRecordHold(f) && step > 0 && minsIdle !== null && minsIdle >= STALL_MINUTES;
+}
+// A "problem" card is anything that needs Amanda's eyes right now: paused
+// on Hold, or gone quiet mid-experience past the stall threshold. These get
+// sorted to the top of their column.
+function hasProblem(f, isTomorrow) {
+  return isRecordHold(f) || isRecordStalled(f, isTomorrow);
+}
 
 // Board columns, left to right. "Full Day" isn't sold yet -- the column is
 // here on purpose, ready for whenever that option exists on the Customers
 // "Check-In Time" field. Anything with a Check-In Time that doesn't match
 // one of these keys (or no time set at all) falls into an Unscheduled
 // column appended at the end, so we never silently drop a record.
+// Full Day column is hidden until that offering actually ships -- no
+// release date yet, no point showing an always-empty column in the
+// meantime. To bring it back, uncomment the line below.
 var COLUMN_DEFS = [
   { key: '9am-1pm', title: 'Morning', sub: '9am – 1pm · Half day', emptyMsg: 'None scheduled' },
-  { key: '12pm-4pm', title: 'Afternoon', sub: '12pm – 4pm · Half day', emptyMsg: 'None scheduled' },
-  { key: 'Full Day', title: 'Full Day', sub: 'Not offered yet', emptyMsg: 'Not offered yet' }
+  { key: '12pm-4pm', title: 'Afternoon', sub: '12pm – 4pm · Half day', emptyMsg: 'None scheduled' }
+  // , { key: 'Full Day', title: 'Full Day', sub: 'Not offered yet', emptyMsg: 'Not offered yet' }
 ];
 function getWindowKey(f) {
   var t = f['Check-In Time'];
@@ -215,8 +240,16 @@ function windowTagText(key) {
   if (key === 'Full Day') return 'Full day';
   return '';
 }
-function buildBoard(recs, isTomorrow) {
+function bySortPriority(isTomorrow) {
   var order = { 'In progress': 0, 'Ready': 1, 'New': 1, 'Curating': 2, 'Complete': 3 };
+  return function(a, b) {
+    var pa = hasProblem(a.fields, isTomorrow) ? 0 : 1;
+    var pb = hasProblem(b.fields, isTomorrow) ? 0 : 1;
+    if (pa !== pb) return pa - pb;
+    return (order[a.fields['Status']]||2)-(order[b.fields['Status']]||2);
+  };
+}
+function buildBoard(recs, isTomorrow) {
   var buckets = {};
   COLUMN_DEFS.forEach(function(c) { buckets[c.key] = []; });
   var overflow = [];
@@ -229,7 +262,7 @@ function buildBoard(recs, isTomorrow) {
   board.className = 'board';
   COLUMN_DEFS.forEach(function(col) {
     var list = buckets[col.key];
-    list.sort(function(a,b) { return (order[a.fields['Status']]||2)-(order[b.fields['Status']]||2); });
+    list.sort(bySortPriority(isTomorrow));
     var colEl = document.createElement('div');
     colEl.className = 'board-col';
     colEl.innerHTML = '<div class="board-col-header"><div><div class="board-col-title">' + col.title + '</div><div class="board-col-sub">' + col.sub + '</div></div><span class="board-col-count">' + list.length + '</span></div>';
@@ -244,7 +277,7 @@ function buildBoard(recs, isTomorrow) {
     board.appendChild(colEl);
   });
   if (overflow.length > 0) {
-    overflow.sort(function(a,b) { return (order[a.fields['Status']]||2)-(order[b.fields['Status']]||2); });
+    overflow.sort(bySortPriority(isTomorrow));
     var colEl2 = document.createElement('div');
     colEl2.className = 'board-col';
     colEl2.innerHTML = '<div class="board-col-header"><div><div class="board-col-title">Time TBD</div><div class="board-col-sub">No check-in time on file</div></div><span class="board-col-count">' + overflow.length + '</span></div>';
@@ -397,14 +430,10 @@ function buildCard(rec, idx, isTomorrow) {
 
   var isComplete = status === 'Complete' || (step >= totalMsgs && totalMsgs > 0);
   var isWaiting = (status === 'New' || status === 'Ready' || status === 'Curating') && step === 0;
-  var isHold = mode === 'Hold';
-
-  // Stalled = mid-experience (already started, not finished, not just
-  // "tomorrow and not started yet"), and no activity in either direction
-  // for 90+ minutes.
+  var isHold = isRecordHold(f);
+  var isStalled = isRecordStalled(f, isTomorrow);
   var lastActivityIso = (lastInbound && (!lastSent || lastInbound > lastSent)) ? lastInbound : lastSent;
   var minsIdle = minutesSince(lastActivityIso);
-  var isStalled = !isTomorrow && !isComplete && !isHold && step > 0 && minsIdle !== null && minsIdle >= STALL_MINUTES;
 
   var avatarCls = isHold ? 'hold' : isComplete ? 'complete' : isTomorrow ? 'tomorrow' : isWaiting ? 'waiting' : '';
   var badgeCls = isComplete ? 'done' : isTomorrow ? 'tmrw' : isWaiting ? 'wt' : 'ip';
@@ -437,10 +466,11 @@ function buildCard(rec, idx, isTomorrow) {
   }
 
   var msgBlock = '';
+  var msgIsLong = nextMsg && nextMsg.length > 140;
   if (isTomorrow) {
     msgBlock = '<div class="schedule-note">' + (scheduled ? '✓ Eve-of message scheduled for 8pm ET tonight' : 'Not yet scheduled — sweep runs nightly') + '</div>';
   } else if (nextMsg) {
-    msgBlock = '<div class="msg-preview"><div class="msg-lbl">Next message</div><div class="msg-text">' + esc(nextMsg) + '</div></div>';
+    msgBlock = '<div class="msg-preview"><div class="msg-lbl">Next message</div><div class="msg-text">' + esc(nextMsg) + '</div>' + (msgIsLong ? '<span class="msg-toggle">Show more</span>' : '') + '</div>';
   }
 
   var nameBlock = '<div class="name-block"><div class="cname">' + esc(name) + '</div><div class="cmeta">' + phone + '</div>' + (windowTag ? '<div class="window-tag">' + esc(windowTag) + '</div>' : '') + '</div>';
@@ -453,6 +483,14 @@ function buildCard(rec, idx, isTomorrow) {
   }
   var fbBtn = card.querySelector('.btn-feedback');
   if (fbBtn) fbBtn.addEventListener('click', function() { showToast('Feedback message — send manually via Twilio'); });
+  var msgToggle = card.querySelector('.msg-toggle');
+  if (msgToggle) {
+    msgToggle.addEventListener('click', function() {
+      var textEl = card.querySelector('.msg-text');
+      var isExp = textEl.classList.toggle('expanded');
+      msgToggle.textContent = isExp ? 'Show less' : 'Show more';
+    });
+  }
   return card;
 }
 function esc(str) {
