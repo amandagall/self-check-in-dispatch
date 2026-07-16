@@ -164,11 +164,13 @@ input[type=password]:focus { border-color: var(--slate); }
 // P4 exception (intentional, narrowly scoped): the Hold toggle and the
 // reply box below DO write to Airtable -- that's the whole point of this
 // ticket, the "human escape hatch." But neither one ever touches Current
-// Step or the Message 1-15 fields. Hold toggle only writes Mode + resets
-// Hold Notice Sent (both already respected by api/inbound.js and
-// api/sweep.js). The reply box only sends a raw SMS via a new endpoint,
-// api/reply.js, and stamps Last Sent At so the stall badge doesn't stay
-// stuck on a conversation Amanda just handled herself.
+// Step or the Message 1-15 fields. Hold toggle goes through api/hold.js,
+// which writes Mode + resets Hold Notice Sent AND attempts to cancel any
+// Twilio message P2's sweep already scheduled (Eve-Of/Morning Message SID)
+// -- a plain field write alone wouldn't actually stop a queued message,
+// since Twilio doesn't check Airtable at send time. The reply box sends a
+// raw SMS via api/reply.js and stamps Last Sent At so the stall badge
+// doesn't stay stuck on a conversation Amanda just handled herself.
 var PASSWORD = 'selfcheckin2026'; // change this and DISPATCH_PASSWORD env var together if you want to rotate it
 var STALL_MINUTES = 90;
 
@@ -369,12 +371,27 @@ function atFetch(id, method, body) {
     return r.json();
   });
 }
-// P4: the two intentional write actions. setHoldMode only ever touches
-// Mode + Hold Notice Sent. sendReply hits a separate endpoint (api/reply.js)
-// since it needs Twilio credentials, not Airtable ones -- atFetch only
-// knows how to talk to /api/experiences.
+// P4: the two intentional write actions. setHoldMode goes through
+// api/hold.js rather than a plain Airtable PATCH -- switching Hold on also
+// has to try cancelling any message P2's sweep already scheduled with
+// Twilio (Eve-Of/Morning Message SID), or "Hold" wouldn't actually stop a
+// queued morning message like the ticket requires. sendReply hits its own
+// endpoint (api/reply.js) since it needs Twilio credentials too, which
+// atFetch/api/experiences.js don't have.
 function setHoldMode(id, hold) {
-  return atFetch(id, 'PATCH', { fields: { 'Mode': hold ? 'Hold' : 'Auto', 'Hold Notice Sent': false } });
+  return fetch('/api/hold', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Dispatch-Key': sessionStorage.getItem('sciPw') || ''
+    },
+    body: JSON.stringify({ recordId: id, hold: hold })
+  }).then(function(r) {
+    return r.json().then(function(data) {
+      if (!r.ok) throw new Error(data.error || ('API ' + r.status));
+      return data;
+    });
+  });
 }
 function sendReply(recordId, to, body) {
   return fetch('/api/reply', {
@@ -402,8 +419,23 @@ function wireAdminControls(card, rec) {
     holdBtn.addEventListener('click', function() {
       holdBtn.disabled = true;
       holdBtn.textContent = 'Working…';
-      setHoldMode(id, !isHold).then(function() {
-        showToast(isHold ? 'Resumed — automation picks up at the current step' : 'On Hold — automation paused for this experience');
+      setHoldMode(id, !isHold).then(function(data) {
+        var msg;
+        if (isHold) {
+          msg = 'Resumed — automation picks up at the current step';
+        } else {
+          var cancellations = (data && data.cancellations) || [];
+          var canceled = cancellations.filter(function(c) { return c.canceled; });
+          var failed = cancellations.filter(function(c) { return !c.canceled; });
+          if (canceled.length) {
+            msg = 'On Hold — canceled ' + canceled.map(function(c) { return c.which; }).join(' & ') + ' message' + (canceled.length > 1 ? 's' : '') + ' with Twilio';
+          } else if (failed.length) {
+            msg = 'On Hold — could not cancel ' + failed.map(function(c) { return c.which; }).join(' & ') + ' (likely already sent)';
+          } else {
+            msg = 'On Hold — nothing queued with Twilio to cancel';
+          }
+        }
+        showToast(msg);
         loadExperiences();
       }).catch(function(err) {
         showToast('Error: ' + err.message);
