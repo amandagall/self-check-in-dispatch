@@ -4,8 +4,8 @@
 //      schedule the feedback question via Twilio for 2 hours later.
 //   2. When the customer replies to that feedback question, classify the reply
 //      (Positive / Unsure / Negative) via Claude, log it verbatim to Airtable, and
-//      send the matching branch response — bundling the referral seed line into the
-//      Positive branch automatically.
+//      send the matching branch response — bundling the referral seed line (with the
+//      customer's personal coupon code) into the Positive branch automatically.
 //
 // Everything below marked "--- FEEDBACK AUTOMATION ---" is new. Everything else is
 // unchanged from the version documented in "SCI Dispatch — SMS Automation P1."
@@ -22,20 +22,24 @@ const HOLDING_MESSAGE = "Quick pause on our end - we'll be right back with you."
 const DOUBLE_TAP_WINDOW_MS = 60 * 1000;
 
 // --- FEEDBACK AUTOMATION ---
+const FEEDBACK_DELAY_MS = 2 * 60 * 60 * 1000; // 2 hours
 const FEEDBACK_BRANCHES_STATIC = {
   Unsure: "That's okay — sometimes it takes a little while to settle. Hope you sleep well tonight.",
   Negative: "Thank you for telling us honestly — that matters. Would you be open to sharing a bit more about what felt off? We want to get it right.",
 };
 const FEEDBACK_QUESTION = "Hey — how are you feeling now compared to when you started this morning?";
 
+// Builds the Positive branch reply. Pulls the customer's personal coupon code
+// (added July 16, 2026) via the Coupon Code lookup on Experiences and folds it into
+// the referral seed line. Falls back to the original generic line if no code is on
+// file — e.g. customers created before this field existed.
 function buildPositiveReply(couponCode) {
   const base = "Really glad to hear that. Thank you for trusting us with your day.";
   const referral = couponCode
     ? " If there's someone in your life who could use a day like this, feel free to pass along your code — " + couponCode + " — for $15 off their first experience."
     : " If there's someone in your life who could use a day like this, feel free to pass us along.";
   return base + referral + " We're always here.";
-};
-const FEEDBACK_QUESTION = "Hey — how are you feeling now compared to when you started this morning?";
+}
 // --- END FEEDBACK AUTOMATION ---
 
 function validateTwilioSignature(authToken, signature, url, params) {
@@ -62,7 +66,12 @@ async function airtable(path, options) {
 
 async function findExperienceByPhone(rawPhone) {
   const digits = rawPhone.replace(/\D/g, '').slice(-10);
-const formula = 'AND(OR({Status} != "Complete", {Awaiting Feedback}), RIGHT(REGEX_REPLACE({Mobile (from Mobile)} & "", "[^0-9]", ""), 10) = "' + digits + '")';  const data = await airtable('?filterByFormula=' + encodeURIComponent(formula) + '&maxRecords=1');
+  // FIXED July 16, 2026: the feedback automation sets Status = Complete at the Close
+  // message, which happens before the feedback reply comes in. The old formula excluded
+  // any Complete record outright, which made the feedback reply itself invisible to this
+  // lookup. Now a record still matches if it's Complete but still Awaiting Feedback.
+  const formula = 'AND(OR({Status} != "Complete", {Awaiting Feedback}), RIGHT(REGEX_REPLACE({Mobile (from Mobile)} & "", "[^0-9]", ""), 10) = "' + digits + '")';
+  const data = await airtable('?filterByFormula=' + encodeURIComponent(formula) + '&maxRecords=1');
   return (data.records && data.records[0]) || null;
 }
 
