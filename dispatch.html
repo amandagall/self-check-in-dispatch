@@ -96,6 +96,17 @@ input[type=password]:focus { border-color: var(--slate); }
 .complete-row .cmeta { font-size: 11px; color: var(--greige); }
 .complete-row .badge { margin-left: auto; }
 .btn-feedback-sm { padding: 4px 10px; font-size: 11px; background: var(--success-bg); color: var(--success); border: 1px solid rgba(74,124,89,0.3); border-radius: 6px; font-family: 'DM Sans', sans-serif; cursor: pointer; flex-shrink: 0; }
+.admin-row { display: flex; gap: 8px; margin-top: 4px; padding-top: 12px; border-top: 1px dashed var(--border-strong); }
+.btn-hold { padding: 6px 12px; font-size: 12px; border-radius: 6px; border: 1px solid var(--border-strong); background: white; color: var(--dark); cursor: pointer; font-family: 'DM Sans', sans-serif; }
+.btn-hold.active { background: var(--stall-bg); color: var(--stall); border-color: rgba(178,59,59,0.3); }
+.btn-hold:disabled { opacity: 0.5; cursor: default; }
+.btn-reply-toggle { padding: 6px 12px; font-size: 12px; border-radius: 6px; border: 1px solid var(--border-strong); background: white; color: var(--dark); cursor: pointer; font-family: 'DM Sans', sans-serif; }
+.reply-box { margin-top: 10px; }
+.reply-input { width: 100%; min-height: 60px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 13px; resize: vertical; background: var(--parchment); color: var(--dark); }
+.reply-actions { display: flex; gap: 8px; margin-top: 6px; }
+.btn-reply-send { padding: 6px 14px; font-size: 12px; background: var(--dark); color: var(--parchment); border: none; border-radius: 6px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+.btn-reply-send:disabled { opacity: 0.4; cursor: default; }
+.btn-reply-cancel { padding: 6px 14px; font-size: 12px; background: transparent; border: 1px solid var(--border-strong); border-radius: 6px; cursor: pointer; color: var(--greige); font-family: 'DM Sans', sans-serif; }
 .board { display: flex; gap: 0; overflow-x: auto; padding: 2px 2px 12px; scroll-snap-type: x proximity; }
 .board-col { flex: 0 0 340px; scroll-snap-align: start; padding-right: 20px; margin-right: 20px; border-right: 1px solid var(--border); }
 .board-col:last-child { border-right: none; margin-right: 0; padding-right: 2px; }
@@ -146,9 +157,18 @@ input[type=password]:focus { border-color: var(--slate); }
 //
 // P3 note: this dashboard is a pure observation surface. P1 (inbound
 // webhook) and P2 (scheduled sweep) own all sending and all Current Step
-// advancement now -- there is intentionally no button anywhere on this page
-// that writes to Airtable. Do not add one back without updating P1/P2 too,
-// or you risk desyncing Current Step from what Twilio actually sent.
+// advancement -- there is no button on this page that touches Current Step
+// or message content. Do not add one back without updating P1/P2 too, or
+// you risk desyncing Current Step from what Twilio actually sent.
+//
+// P4 exception (intentional, narrowly scoped): the Hold toggle and the
+// reply box below DO write to Airtable -- that's the whole point of this
+// ticket, the "human escape hatch." But neither one ever touches Current
+// Step or the Message 1-15 fields. Hold toggle only writes Mode + resets
+// Hold Notice Sent (both already respected by api/inbound.js and
+// api/sweep.js). The reply box only sends a raw SMS via a new endpoint,
+// api/reply.js, and stamps Last Sent At so the stall badge doesn't stay
+// stuck on a conversation Amanda just handled herself.
 var PASSWORD = 'selfcheckin2026'; // change this and DISPATCH_PASSWORD env var together if you want to rotate it
 var STALL_MINUTES = 90;
 
@@ -349,6 +369,84 @@ function atFetch(id, method, body) {
     return r.json();
   });
 }
+// P4: the two intentional write actions. setHoldMode only ever touches
+// Mode + Hold Notice Sent. sendReply hits a separate endpoint (api/reply.js)
+// since it needs Twilio credentials, not Airtable ones -- atFetch only
+// knows how to talk to /api/experiences.
+function setHoldMode(id, hold) {
+  return atFetch(id, 'PATCH', { fields: { 'Mode': hold ? 'Hold' : 'Auto', 'Hold Notice Sent': false } });
+}
+function sendReply(recordId, to, body) {
+  return fetch('/api/reply', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Dispatch-Key': sessionStorage.getItem('sciPw') || ''
+    },
+    body: JSON.stringify({ recordId: recordId, to: to, body: body })
+  }).then(function(r) {
+    return r.json().then(function(data) {
+      if (!r.ok) throw new Error(data.error || ('API ' + r.status));
+      return data;
+    });
+  });
+}
+function wireAdminControls(card, rec) {
+  var id = rec.id;
+  var f = rec.fields;
+  var phone = f['Mobile (from Mobile)'] || f['Phone'] || '';
+  var isHold = isRecordHold(f);
+
+  var holdBtn = card.querySelector('.btn-hold');
+  if (holdBtn) {
+    holdBtn.addEventListener('click', function() {
+      holdBtn.disabled = true;
+      holdBtn.textContent = 'Working…';
+      setHoldMode(id, !isHold).then(function() {
+        showToast(isHold ? 'Resumed — automation picks up at the current step' : 'On Hold — automation paused for this experience');
+        loadExperiences();
+      }).catch(function(err) {
+        showToast('Error: ' + err.message);
+        holdBtn.disabled = false;
+        holdBtn.textContent = isHold ? '▶ Resume' : '⏸ Hold';
+      });
+    });
+  }
+
+  var replyToggle = card.querySelector('.btn-reply-toggle');
+  var replyBox = card.querySelector('.reply-box');
+  if (replyToggle && replyBox) {
+    replyToggle.addEventListener('click', function() {
+      replyBox.style.display = replyBox.style.display === 'none' ? 'block' : 'none';
+    });
+  }
+  var textarea = card.querySelector('.reply-input');
+  var cancelBtn = card.querySelector('.btn-reply-cancel');
+  if (cancelBtn && replyBox && textarea) {
+    cancelBtn.addEventListener('click', function() {
+      textarea.value = '';
+      replyBox.style.display = 'none';
+    });
+  }
+  var sendBtn = card.querySelector('.btn-reply-send');
+  if (sendBtn && textarea) {
+    sendBtn.addEventListener('click', function() {
+      var text = textarea.value.trim();
+      if (!text) { showToast('Type a message first'); return; }
+      if (!phone) { showToast('No phone number on file for this experience'); return; }
+      sendBtn.disabled = true;
+      sendBtn.textContent = 'Sending…';
+      sendReply(id, phone, text).then(function() {
+        showToast('Reply sent');
+        loadExperiences();
+      }).catch(function(err) {
+        showToast('Error: ' + err.message);
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Send';
+      });
+    });
+  }
+}
 function loadExperiences() {
   var container = document.getElementById('cards');
   container.innerHTML = '<div class="state-msg"><div class="ico">⏳</div>Loading...</div>';
@@ -489,10 +587,15 @@ function buildCard(rec, idx, isTomorrow) {
   var nameBlock = '<div class="name-block"><div class="cname">' + esc(name) + '</div><div class="cmeta">' + phone + '</div>' + (windowTag ? '<div class="window-tag">' + esc(windowTag) + '</div>' : '') + '</div>';
   var cardTop = '<div class="card-top"><div class="avatar ' + (isComplete ? 'complete' : avatarCls) + '">' + initials + '</div>' + nameBlock + '</div>';
   var badgeRow = '<div class="badge-row">' + badges + '</div>';
+  // P4: Hold toggle + reply box -- the only writes this dashboard makes,
+  // and only Mode/Hold Notice Sent/Last Sent At, never Current Step or
+  // message content. Not shown on Complete cards -- nothing left to manage.
+  var adminHtml = '<div class="admin-row"><button class="btn-hold' + (isHold ? ' active' : '') + '">' + (isHold ? '▶ Resume' : '⏸ Hold') + '</button><button class="btn-reply-toggle">💬 Reply</button></div><div class="reply-box" style="display:none"><textarea class="reply-input" placeholder="Message this customer from the business number…"></textarea><div class="reply-actions"><button class="btn-reply-send">Send</button><button class="btn-reply-cancel">Cancel</button></div></div>';
+
   if (isComplete) {
     card.innerHTML = cardTop + badgeRow + '<div class="progress-row">' + pipsHtml + '<span class="pip-lbl">' + stepLbl + '</span></div>' + activityHtml + '<div class="actions"><button class="btn-feedback">Send feedback ask</button></div>';
   } else {
-    card.innerHTML = cardTop + badgeRow + '<div class="progress-row">' + pipsHtml + '<span class="pip-lbl">' + stepLbl + '</span></div>' + activityHtml + msgBlock;
+    card.innerHTML = cardTop + badgeRow + '<div class="progress-row">' + pipsHtml + '<span class="pip-lbl">' + stepLbl + '</span></div>' + activityHtml + msgBlock + adminHtml;
   }
   var fbBtn = card.querySelector('.btn-feedback');
   if (fbBtn) fbBtn.addEventListener('click', function() { copyFeedbackQuestion(f); });
@@ -504,6 +607,7 @@ function buildCard(rec, idx, isTomorrow) {
       msgToggle.textContent = isExp ? 'Show less' : 'Show more';
     });
   }
+  if (!isComplete) wireAdminControls(card, rec);
   return card;
 }
 function esc(str) {
