@@ -245,7 +245,7 @@ function buildBoard(recs, isTomorrow) {
     overflow.sort(function(a,b) { return (order[a.fields['Status']]||2)-(order[b.fields['Status']]||2); });
     var colEl2 = document.createElement('div');
     colEl2.className = 'board-col';
-    colEl2.innerHTML = '<div class="board-col-header"><div><div class="board-col-title">Unscheduled</div><div class="board-col-sub">No time window set</div></div><span class="board-col-count">' + overflow.length + '</span></div>';
+    colEl2.innerHTML = '<div class="board-col-header"><div><div class="board-col-title">Time TBD</div><div class="board-col-sub">No check-in time on file</div></div><span class="board-col-count">' + overflow.length + '</span></div>';
     overflow.forEach(function(rec, i) { colEl2.appendChild(buildCard(rec, i, isTomorrow)); });
     board.appendChild(colEl2);
   }
