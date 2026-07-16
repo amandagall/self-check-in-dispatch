@@ -51,9 +51,6 @@ async function airtable(path, options = {}) {
 }
 
 async function findExperienceByPhone(rawPhone) {
-  // Twilio sends E.164 (+12895551234); Airtable's Mobile field can be typed
-  // in any format. Normalize both to the last 10 digits before comparing,
-  // instead of a naive string match that would miss formatted numbers.
   const digits = rawPhone.replace(/\D/g, '').slice(-10);
   const formula = `AND({Status} != "Complete", RIGHT(REGEX_REPLACE({Mobile (from Mobile)} & "", "[^0-9]", ""), 10) = "${digits}")`;
   const data = await airtable(`?filterByFormula=${encodeURIComponent(formula)}&maxRecords=1`);
@@ -96,8 +93,8 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const from = req.body.From;   // customer's number
-  const to = req.body.To;       // our Twilio number — reused as "From" on replies
+  const from = req.body.From;
+  const to = req.body.To;
   const body = (req.body.Body || '').trim().toLowerCase();
   const now = new Date().toISOString();
 
@@ -129,7 +126,7 @@ module.exports = async (req, res) => {
   }
 
   if (lastSentAt && Date.now() - lastSentAt.getTime() < DOUBLE_TAP_WINDOW_MS) {
-    return twiml(res); // double-tap guard — silently ignore
+    return twiml(res);
   }
 
   const nextMessage = fields['Next Message'];
