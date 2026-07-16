@@ -22,11 +22,18 @@ const HOLDING_MESSAGE = "Quick pause on our end - we'll be right back with you."
 const DOUBLE_TAP_WINDOW_MS = 60 * 1000;
 
 // --- FEEDBACK AUTOMATION ---
-const FEEDBACK_DELAY_MS = 2 * 60 * 60 * 1000; // 2 hours
-const FEEDBACK_BRANCHES = {
-  Positive: "Really glad to hear that. Thank you for trusting us with your day. If there's someone in your life who could use a day like this, feel free to pass us along. We're always here.",
+const FEEDBACK_BRANCHES_STATIC = {
   Unsure: "That's okay — sometimes it takes a little while to settle. Hope you sleep well tonight.",
   Negative: "Thank you for telling us honestly — that matters. Would you be open to sharing a bit more about what felt off? We want to get it right.",
+};
+const FEEDBACK_QUESTION = "Hey — how are you feeling now compared to when you started this morning?";
+
+function buildPositiveReply(couponCode) {
+  const base = "Really glad to hear that. Thank you for trusting us with your day.";
+  const referral = couponCode
+    ? " If there's someone in your life who could use a day like this, feel free to pass along your code — " + couponCode + " — for $15 off their first experience."
+    : " If there's someone in your life who could use a day like this, feel free to pass us along.";
+  return base + referral + " We're always here.";
 };
 const FEEDBACK_QUESTION = "Hey — how are you feeling now compared to when you started this morning?";
 // --- END FEEDBACK AUTOMATION ---
@@ -185,7 +192,10 @@ module.exports = async (req, res) => {
   // never fall through to the "forward unmatched reply to Amanda" path.
   if (fields['Awaiting Feedback']) {
     const sentiment = await classifyFeedback(body);
-    const branchMessage = FEEDBACK_BRANCHES[sentiment];
+    const couponCode = (fields['Coupon Code'] && fields['Coupon Code'][0]) || '';
+    const branchMessage = sentiment === 'Positive'
+      ? buildPositiveReply(couponCode)
+      : FEEDBACK_BRANCHES_STATIC[sentiment];
     await sendSms(from, to, branchMessage);
     await updateExperience(id, {
       'Feedback Reply': body,
