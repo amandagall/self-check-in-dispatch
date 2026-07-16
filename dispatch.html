@@ -43,7 +43,7 @@ input[type=password]:focus { border-color: var(--slate); }
 .date-lbl { font-size: 13px; color: var(--greige); }
 .refresh-btn { font-size: 12px; color: var(--slate); background: none; border: 1px solid var(--border-strong); border-radius: 6px; padding: 5px 10px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
 .refresh-btn:hover { background: var(--border); }
-.main { max-width: 680px; margin: 0 auto; padding: 32px 24px 80px; }
+.main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 80px; }
 .section-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 20px; }
 .section-title { font-family: 'Cormorant Garamond', serif; font-weight: 300; font-size: 20px; }
 .section-count { font-size: 12px; color: var(--greige); }
@@ -59,6 +59,7 @@ input[type=password]:focus { border-color: var(--slate); }
 .avatar.hold { background: var(--stall-bg); color: var(--stall); }
 .cname { font-size: 15px; font-weight: 500; }
 .cmeta { font-size: 12px; color: var(--greige); margin-top: 1px; }
+.window-tag { font-size: 11px; color: var(--slate); margin-top: 2px; font-weight: 500; }
 .badge-group { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .badge { font-size: 11px; font-weight: 500; padding: 3px 10px; border-radius: 20px; white-space: nowrap; }
 .badge.ip { background: var(--info-bg); color: var(--info); }
@@ -81,6 +82,24 @@ input[type=password]:focus { border-color: var(--slate); }
 .msg-text { font-size: 13px; line-height: 1.6; }
 .schedule-note { font-size: 12px; color: var(--greige); }
 .btn-feedback { padding: 8px 16px; background: var(--success-bg); color: var(--success); border: 1px solid rgba(74,124,89,0.3); border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; }
+.complete-section { margin-top: 20px; }
+.complete-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px 4px; font-size: 12px; color: var(--greige); user-select: none; }
+.complete-toggle .chev { display: inline-block; transition: transform 0.15s ease; font-size: 10px; }
+.complete-toggle.expanded .chev { transform: rotate(90deg); }
+.complete-list { display: none; }
+.complete-list.expanded { display: block; }
+.complete-row { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: white; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; }
+.complete-row .cname { font-size: 13px; font-weight: 500; }
+.complete-row .cmeta { font-size: 11px; color: var(--greige); }
+.complete-row .badge { margin-left: auto; }
+.btn-feedback-sm { padding: 4px 10px; font-size: 11px; background: var(--success-bg); color: var(--success); border: 1px solid rgba(74,124,89,0.3); border-radius: 6px; font-family: 'DM Sans', sans-serif; cursor: pointer; flex-shrink: 0; }
+.board { display: flex; gap: 16px; overflow-x: auto; padding: 2px 2px 12px; scroll-snap-type: x proximity; }
+.board-col { flex: 0 0 320px; scroll-snap-align: start; }
+.board-col-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; padding: 0 2px; gap: 8px; }
+.board-col-title { font-family: 'Cormorant Garamond', serif; font-weight: 400; font-size: 16px; }
+.board-col-sub { font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--greige); margin-top: 2px; }
+.board-col-count { font-size: 11px; color: var(--greige); flex-shrink: 0; padding-top: 3px; }
+.board-col-empty { font-size: 12px; color: var(--greige); padding: 22px 12px; text-align: center; border: 1px dashed var(--border-strong); border-radius: var(--radius); }
 .state-msg { text-align: center; padding: 60px 24px; color: var(--greige); }
 .state-msg .ico { font-size: 32px; margin-bottom: 12px; }
 .footer-note { text-align: center; font-size: 11px; color: var(--greige); margin-top: 40px; opacity: 0.7; }
@@ -161,6 +180,77 @@ function minutesSince(iso) {
   if (isNaN(d.getTime())) return null;
   return (Date.now() - d.getTime()) / 60000;
 }
+function computeTotalMsgs(f) {
+  var totalMsgs = 0;
+  for (var i = 1; i <= 15; i++) { if (f[messageField(i)]) totalMsgs = i; }
+  return totalMsgs;
+}
+function isRecordComplete(f) {
+  var status = f['Status'] || 'New';
+  var step = f['Current Step'] != null ? f['Current Step'] : 0;
+  var totalMsgs = computeTotalMsgs(f);
+  return status === 'Complete' || (step >= totalMsgs && totalMsgs > 0);
+}
+
+// Board columns, left to right. "Full Day" isn't sold yet -- the column is
+// here on purpose, ready for whenever that option exists on the Customers
+// "Check-In Time" field. Anything with a Check-In Time that doesn't match
+// one of these keys (or no time set at all) falls into an Unscheduled
+// column appended at the end, so we never silently drop a record.
+var COLUMN_DEFS = [
+  { key: '9am-1pm', title: 'Morning', sub: '9am – 1pm · Half day', emptyMsg: 'None scheduled' },
+  { key: '12pm-4pm', title: 'Afternoon', sub: '12pm – 4pm · Half day', emptyMsg: 'None scheduled' },
+  { key: 'Full Day', title: 'Full Day', sub: 'Not offered yet', emptyMsg: 'Not offered yet' }
+];
+function getWindowKey(f) {
+  var t = f['Check-In Time'];
+  if (Array.isArray(t)) t = t[0];
+  return t || null;
+}
+function windowTagText(key) {
+  if (key === '9am-1pm') return 'Morning · Half day';
+  if (key === '12pm-4pm') return 'Afternoon · Half day';
+  if (key === 'Full Day') return 'Full day';
+  return '';
+}
+function buildBoard(recs, isTomorrow) {
+  var order = { 'In progress': 0, 'Ready': 1, 'New': 1, 'Curating': 2, 'Complete': 3 };
+  var buckets = {};
+  COLUMN_DEFS.forEach(function(c) { buckets[c.key] = []; });
+  var overflow = [];
+  recs.forEach(function(r) {
+    var key = getWindowKey(r.fields);
+    if (key && buckets.hasOwnProperty(key)) buckets[key].push(r);
+    else overflow.push(r);
+  });
+  var board = document.createElement('div');
+  board.className = 'board';
+  COLUMN_DEFS.forEach(function(col) {
+    var list = buckets[col.key];
+    list.sort(function(a,b) { return (order[a.fields['Status']]||2)-(order[b.fields['Status']]||2); });
+    var colEl = document.createElement('div');
+    colEl.className = 'board-col';
+    colEl.innerHTML = '<div class="board-col-header"><div><div class="board-col-title">' + col.title + '</div><div class="board-col-sub">' + col.sub + '</div></div><span class="board-col-count">' + list.length + '</span></div>';
+    if (list.length === 0) {
+      var empty = document.createElement('div');
+      empty.className = 'board-col-empty';
+      empty.textContent = col.emptyMsg;
+      colEl.appendChild(empty);
+    } else {
+      list.forEach(function(rec, i) { colEl.appendChild(buildCard(rec, i, isTomorrow)); });
+    }
+    board.appendChild(colEl);
+  });
+  if (overflow.length > 0) {
+    overflow.sort(function(a,b) { return (order[a.fields['Status']]||2)-(order[b.fields['Status']]||2); });
+    var colEl2 = document.createElement('div');
+    colEl2.className = 'board-col';
+    colEl2.innerHTML = '<div class="board-col-header"><div><div class="board-col-title">Unscheduled</div><div class="board-col-sub">No time window set</div></div><span class="board-col-count">' + overflow.length + '</span></div>';
+    overflow.forEach(function(rec, i) { colEl2.appendChild(buildCard(rec, i, isTomorrow)); });
+    board.appendChild(colEl2);
+  }
+  return board;
+}
 
 function showToast(msg) {
   var el = document.getElementById('toast');
@@ -230,30 +320,59 @@ function loadExperiences() {
       document.getElementById('exp-count').textContent = '';
       return;
     }
-    var total = todayRecs.length + tomorrowRecs.length;
-    document.getElementById('exp-count').textContent = total + ' active';
+    var todayActive = todayRecs.filter(function(r) { return !isRecordComplete(r.fields); });
+    var todayComplete = todayRecs.filter(function(r) { return isRecordComplete(r.fields); });
+    document.getElementById('exp-count').textContent = todayActive.length + ' active' + (todayComplete.length ? ', ' + todayComplete.length + ' complete' : '');
     container.innerHTML = '';
-    var order = { 'In progress': 0, 'Ready': 1, 'New': 1, 'Curating': 2, 'Complete': 3 };
-    if (todayRecs.length > 0) {
+    if (todayActive.length > 0) {
       var div = document.createElement('div');
       div.className = 'day-divider';
       div.textContent = 'Today';
       container.appendChild(div);
-      todayRecs.sort(function(a,b) { return (order[a.fields['Status']]||2)-(order[b.fields['Status']]||2); });
-      todayRecs.forEach(function(rec, i) { container.appendChild(buildCard(rec, i, false)); });
+      container.appendChild(buildBoard(todayActive, false));
+    }
+    if (todayComplete.length > 0) {
+      container.appendChild(buildCompleteSection(todayComplete));
     }
     if (tomorrowRecs.length > 0) {
       var div2 = document.createElement('div');
       div2.className = 'day-divider';
       div2.textContent = 'Tomorrow — eve-of & morning messages scheduled automatically';
       container.appendChild(div2);
-      tomorrowRecs.sort(function(a,b) { return (order[a.fields['Status']]||2)-(order[b.fields['Status']]||2); });
-      tomorrowRecs.forEach(function(rec, i) { container.appendChild(buildCard(rec, i, true)); });
+      container.appendChild(buildBoard(tomorrowRecs, true));
     }
     document.getElementById('footer-note').textContent = 'Updated ' + new Date().toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' }) + ' · Auto-refreshes every 60s · No URLs in messages';
   }).catch(function(err) {
     container.innerHTML = '<div class="state-msg"><div class="ico">⚠️</div>Could not load experiences.<br><small>' + err.message + '</small></div>';
   });
+}
+function buildCompleteSection(recs) {
+  var wrap = document.createElement('div');
+  wrap.className = 'complete-section';
+  var toggle = document.createElement('div');
+  toggle.className = 'complete-toggle';
+  toggle.innerHTML = '<span class="chev">▸</span><span>' + recs.length + ' complete today</span>';
+  var list = document.createElement('div');
+  list.className = 'complete-list';
+  recs.forEach(function(rec) { list.appendChild(buildCompactRow(rec)); });
+  toggle.addEventListener('click', function() {
+    var open = list.classList.toggle('expanded');
+    toggle.classList.toggle('expanded', open);
+  });
+  wrap.appendChild(toggle);
+  wrap.appendChild(list);
+  return wrap;
+}
+function buildCompactRow(rec) {
+  var f = rec.fields;
+  var name = f['Customer Name'] || 'Unknown';
+  var phone = f['Mobile (from Mobile)'] || f['Phone'] || '';
+  var row = document.createElement('div');
+  row.className = 'complete-row';
+  row.innerHTML = '<div><div class="cname">' + esc(name) + '</div><div class="cmeta">' + phone + '</div></div><span class="badge done">Complete</span><button class="btn-feedback-sm">Send feedback ask</button>';
+  var fbBtn = row.querySelector('.btn-feedback-sm');
+  if (fbBtn) fbBtn.addEventListener('click', function(e) { e.stopPropagation(); showToast('Feedback message — send manually via Twilio'); });
+  return row;
 }
 function buildCard(rec, idx, isTomorrow) {
   var f = rec.fields;
@@ -269,6 +388,7 @@ function buildCard(rec, idx, isTomorrow) {
   var lastSent = f['Last Sent At'] || '';
   var lastInbound = f['Last Inbound At'] || '';
   var scheduled = !!f['Scheduled'];
+  var windowTag = windowTagText(getWindowKey(f));
 
   var totalMsgs = 0;
   for (var i = 1; i <= 15; i++) { if (f[messageField(i)]) totalMsgs = i; }
@@ -321,10 +441,11 @@ function buildCard(rec, idx, isTomorrow) {
     msgBlock = '<div class="msg-preview"><div class="msg-lbl">Next message</div><div class="msg-text">' + esc(nextMsg) + '</div></div>';
   }
 
+  var nameBlock = '<div><div class="cname">' + esc(name) + '</div><div class="cmeta">' + phone + '</div>' + (windowTag ? '<div class="window-tag">' + esc(windowTag) + '</div>' : '') + '</div>';
   if (isComplete) {
-    card.innerHTML = '<div class="card-top"><div class="avatar complete">' + initials + '</div><div><div class="cname">' + esc(name) + '</div><div class="cmeta">' + phone + '</div></div><div class="badge-group">' + badges + '</div></div><div class="progress-row">' + pipsHtml + '<span class="pip-lbl">' + stepLbl + '</span></div>' + activityHtml + '<div class="actions"><button class="btn-feedback">Send feedback ask</button></div>';
+    card.innerHTML = '<div class="card-top"><div class="avatar complete">' + initials + '</div>' + nameBlock + '<div class="badge-group">' + badges + '</div></div><div class="progress-row">' + pipsHtml + '<span class="pip-lbl">' + stepLbl + '</span></div>' + activityHtml + '<div class="actions"><button class="btn-feedback">Send feedback ask</button></div>';
   } else {
-    card.innerHTML = '<div class="card-top"><div class="avatar ' + avatarCls + '">' + initials + '</div><div><div class="cname">' + esc(name) + '</div><div class="cmeta">' + phone + '</div></div><div class="badge-group">' + badges + '</div></div><div class="progress-row">' + pipsHtml + '<span class="pip-lbl">' + stepLbl + '</span></div>' + activityHtml + msgBlock;
+    card.innerHTML = '<div class="card-top"><div class="avatar ' + avatarCls + '">' + initials + '</div>' + nameBlock + '<div class="badge-group">' + badges + '</div></div><div class="progress-row">' + pipsHtml + '<span class="pip-lbl">' + stepLbl + '</span></div>' + activityHtml + msgBlock;
   }
   var fbBtn = card.querySelector('.btn-feedback');
   if (fbBtn) fbBtn.addEventListener('click', function() { showToast('Feedback message — send manually via Twilio'); });
