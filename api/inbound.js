@@ -4,8 +4,11 @@
 //      schedule the feedback question via Twilio for 2 hours later.
 //   2. When the customer replies to that feedback question, classify the reply
 //      (Positive / Unsure / Negative) via Claude, log it verbatim to Airtable, and
-//      send the matching branch response — bundling the referral seed line (with the
-//      customer's personal coupon code) into the Positive branch automatically.
+//      send the matching branch response — bundling the referral seed line into the
+//      Positive branch automatically.
+//   3. If the reply is Negative, keep the record open for exactly one more inbound
+//      text (the answer to "would you be open to sharing a bit more?") and log it
+//      to a dedicated Feedback Follow-Up field.
 //
 // Everything below marked "--- FEEDBACK AUTOMATION ---" is new. Everything else is
 // unchanged from the version documented in "SCI Dispatch — SMS Automation P1."
@@ -28,6 +31,7 @@ const FEEDBACK_BRANCHES_STATIC = {
   Negative: "Thank you for telling us honestly — that matters. Would you be open to sharing a bit more about what felt off? We want to get it right.",
 };
 const FEEDBACK_QUESTION = "Hey — how are you feeling now compared to when you started this morning?";
+const FOLLOW_UP_ACK = "Thank you — we'll take a good look at this. We really appreciate you telling us.";
 
 // Builds the Positive branch reply. Pulls the customer's personal coupon code
 // (added July 16, 2026) via the Coupon Code lookup on Experiences and folds it into
@@ -70,7 +74,9 @@ async function findExperienceByPhone(rawPhone) {
   // message, which happens before the feedback reply comes in. The old formula excluded
   // any Complete record outright, which made the feedback reply itself invisible to this
   // lookup. Now a record still matches if it's Complete but still Awaiting Feedback.
-  const formula = 'AND(OR({Status} != "Complete", {Awaiting Feedback}), RIGHT(REGEX_REPLACE({Mobile (from Mobile)} & "", "[^0-9]", ""), 10) = "' + digits + '")';
+  // FIXED July 16, 2026 (again): the negative-feedback follow-up capture needs the
+  // record findable for one more reply after Awaiting Feedback has already cleared.
+  const formula = 'AND(OR({Status} != "Complete", {Awaiting Feedback}, {Awaiting Feedback Detail}), RIGHT(REGEX_REPLACE({Mobile (from Mobile)} & "", "[^0-9]", ""), 10) = "' + digits + '")';
   const data = await airtable('?filterByFormula=' + encodeURIComponent(formula) + '&maxRecords=1');
   return (data.records && data.records[0]) || null;
 }
@@ -196,6 +202,20 @@ module.exports = async (req, res) => {
   const currentStep = fields['Current Step'] || 0;
 
   // --- FEEDBACK AUTOMATION ---
+  // If a Negative feedback reply already asked "would you be open to sharing more,"
+  // this is that follow-up — capture it verbatim and close out. Checked before the
+  // main feedback branch since it's the more specific state.
+  if (fields['Awaiting Feedback Detail']) {
+    await sendSms(from, to, FOLLOW_UP_ACK);
+    await updateExperience(id, {
+      'Feedback Follow-Up': body,
+      'Feedback Follow-Up At': now,
+      'Awaiting Feedback Detail': false,
+      'Last Inbound At': now,
+    });
+    return twiml(res);
+  }
+
   // If we're waiting on this customer's reply to the feedback question, handle it here,
   // before Hold/keyword logic — this is free text, not a next/done reply, and should
   // never fall through to the "forward unmatched reply to Amanda" path.
@@ -211,6 +231,9 @@ module.exports = async (req, res) => {
       'Feedback Sentiment': sentiment,
       'Feedback Replied At': now,
       'Awaiting Feedback': false,
+      // Negative replies invited a follow-up ("would you be open to sharing more?") —
+      // keep the record open for exactly one more reply to capture it.
+      'Awaiting Feedback Detail': sentiment === 'Negative',
       'Referral Seed Sent': sentiment === 'Positive',
       'Last Inbound At': now,
     });
