@@ -22,7 +22,9 @@ const crypto = require('crypto');
 
 const WEBHOOK_URL = 'https://self-check-in-experiences.vercel.app/api/inbound';
 const ADVANCE_KEYWORDS = ['next', 'done'];
-const HOLDING_MESSAGE = "Quick pause on our end — we'll be right back with you.";
+// P4: brand-voiced, permission-giving, sent once per Hold period (see
+// Hold Notice Sent below) -- makes clear the pause is on our end, not theirs.
+const HOLDING_MESSAGE = "Small pause on our side, not yours — we'll pick back up shortly.";
 const DOUBLE_TAP_WINDOW_MS = 60 * 1000;
 
 function validateTwilioSignature(authToken, signature, url, params) {
@@ -105,7 +107,7 @@ module.exports = async (req, res) => {
     return twiml(res);
   }
 
- const { id, fields } = record;
+  const { id, fields } = record;
   const mode = fields['Mode'] || 'Auto';
   const lastSentAt = fields['Last Sent At'] ? new Date(fields['Last Sent At']) : null;
   const currentStep = fields['Current Step'] || 0;
@@ -144,4 +146,4 @@ module.exports = async (req, res) => {
     'Hold Notice Sent': false,
   });
   return twiml(res);
-}; 
+};
