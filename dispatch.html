@@ -287,6 +287,19 @@ function buildBoard(recs, isTomorrow) {
   return board;
 }
 
+// Feedback asks stay manual on purpose (see P3 note above -- this dashboard
+// never writes to Airtable). This just copies the pre-written question to
+// the clipboard, a read-only client-side action, so Amanda can paste it
+// into Twilio herself.
+function copyFeedbackQuestion(f) {
+  var q = f['Feedback Question'] || '';
+  if (!q) {
+    showToast('No feedback question set for this experience yet');
+    return;
+  }
+  try { navigator.clipboard.writeText(q); } catch (e) {}
+  showToast('Feedback question copied — paste into Twilio');
+}
 function showToast(msg) {
   var el = document.getElementById('toast');
   el.textContent = msg;
@@ -406,7 +419,7 @@ function buildCompactRow(rec) {
   row.className = 'complete-row';
   row.innerHTML = '<div><div class="cname">' + esc(name) + '</div><div class="cmeta">' + phone + '</div></div><span class="badge done">Complete</span><button class="btn-feedback-sm">Send feedback ask</button>';
   var fbBtn = row.querySelector('.btn-feedback-sm');
-  if (fbBtn) fbBtn.addEventListener('click', function(e) { e.stopPropagation(); showToast('Feedback message — send manually via Twilio'); });
+  if (fbBtn) fbBtn.addEventListener('click', function(e) { e.stopPropagation(); copyFeedbackQuestion(f); });
   return row;
 }
 function buildCard(rec, idx, isTomorrow) {
@@ -482,7 +495,7 @@ function buildCard(rec, idx, isTomorrow) {
     card.innerHTML = cardTop + badgeRow + '<div class="progress-row">' + pipsHtml + '<span class="pip-lbl">' + stepLbl + '</span></div>' + activityHtml + msgBlock;
   }
   var fbBtn = card.querySelector('.btn-feedback');
-  if (fbBtn) fbBtn.addEventListener('click', function() { showToast('Feedback message — send manually via Twilio'); });
+  if (fbBtn) fbBtn.addEventListener('click', function() { copyFeedbackQuestion(f); });
   var msgToggle = card.querySelector('.msg-toggle');
   if (msgToggle) {
     msgToggle.addEventListener('click', function() {
