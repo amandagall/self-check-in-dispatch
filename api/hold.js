@@ -76,18 +76,27 @@ module.exports = async (req, res) => {
     if (hold) {
       const record = await airtable(`/${recordId}`);
       const fields = record.fields || {};
-      const currentStep = fields['Current Step'] || 0;
       const eveSid = fields['Eve-Of Message SID'];
       const morningSid = fields['Morning Message SID'];
 
-      // Current Step 0 = neither sent yet, 1 = eve-of sent, morning still
-      // pending, 2+ = both already sent. Only attempt cancellation for
-      // steps that plausibly haven't fired -- skips a guaranteed no-op
-      // call rather than skipping anything that might still be pending.
-      if (currentStep < 1 && eveSid && !eveSid.startsWith('{')) {
+      // Always attempt cancellation on both SIDs whenever present -- do NOT
+      // gate this on Current Step. sweep.js sets Current Step to 2 the
+      // moment it *schedules* the messages, not when they actually send, so
+      // for the entire window between the nightly sweep and the eve-of/
+      // morning SendAt actually arriving, Current Step already reads 2 even
+      // though both messages are still sitting in Twilio's queue. An
+      // earlier version of this endpoint used Current Step thresholds
+      // (<1 for eve-of, <2 for morning) to decide whether cancellation was
+      // worth trying, which meant Hold silently skipped cancelling BOTH
+      // messages during exactly the window this ticket cares about most.
+      // Found via a live sweep test, 2026-07-16. Twilio's own cancel API is
+      // the correct source of truth for "already sent" -- it just returns a
+      // non-canceled status we already report gracefully -- so there's no
+      // need to guess from Current Step at all.
+      if (eveSid && !eveSid.startsWith('{')) {
         cancellations.push(Object.assign({ which: 'Eve-Of' }, await cancelTwilioMessage(eveSid)));
       }
-      if (currentStep < 2 && morningSid && !morningSid.startsWith('{')) {
+      if (morningSid && !morningSid.startsWith('{')) {
         cancellations.push(Object.assign({ which: 'Morning' }, await cancelTwilioMessage(morningSid)));
       }
     }
