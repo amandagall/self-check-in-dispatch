@@ -21,6 +21,8 @@
   --warning: #8A6800;
   --info-bg: #EDF2F7;
   --info: #2C5282;
+  --stall-bg: #FBEAEA;
+  --stall: #B23B3B;
   --radius: 12px;
   --shadow: 0 1px 3px rgba(44,40,32,0.08), 0 4px 16px rgba(44,40,32,0.06);
 }
@@ -47,35 +49,37 @@ input[type=password]:focus { border-color: var(--slate); }
 .section-count { font-size: 12px; color: var(--greige); }
 .day-divider { font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--greige); margin: 24px 0 10px; }
 .card { background: white; border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 24px; margin-bottom: 12px; box-shadow: var(--shadow); animation: fadeUp 0.3s ease both; }
+.card.stalled { border-color: rgba(178,59,59,0.35); }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 .card-top { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
 .avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 500; flex-shrink: 0; background: var(--info-bg); color: var(--info); }
 .avatar.complete { background: var(--success-bg); color: var(--success); }
 .avatar.waiting { background: var(--warning-bg); color: var(--warning); }
 .avatar.tomorrow { background: var(--parchment); color: var(--greige); border: 1px solid var(--border-strong); }
+.avatar.hold { background: var(--stall-bg); color: var(--stall); }
 .cname { font-size: 15px; font-weight: 500; }
 .cmeta { font-size: 12px; color: var(--greige); margin-top: 1px; }
-.badge { margin-left: auto; font-size: 11px; font-weight: 500; padding: 3px 10px; border-radius: 20px; flex-shrink: 0; }
+.badge-group { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.badge { font-size: 11px; font-weight: 500; padding: 3px 10px; border-radius: 20px; white-space: nowrap; }
 .badge.ip { background: var(--info-bg); color: var(--info); }
 .badge.wt { background: var(--warning-bg); color: var(--warning); }
 .badge.done { background: var(--success-bg); color: var(--success); }
 .badge.tmrw { background: var(--parchment); color: var(--greige); border: 1px solid var(--border-strong); }
+.badge.hold { background: var(--stall-bg); color: var(--stall); }
+.badge.stall { background: var(--stall-bg); color: var(--stall); }
 .progress-row { display: flex; align-items: center; gap: 5px; margin-bottom: 14px; }
 .pip { height: 5px; border-radius: 3px; background: var(--border); flex: 1; max-width: 32px; }
 .pip.sent { background: var(--slate); opacity: 0.5; }
 .pip.current { background: var(--slate); }
 .pip-lbl { font-size: 12px; color: var(--greige); margin-left: 6px; white-space: nowrap; flex-shrink: 0; }
-.reply-bubble { display: inline-block; background: var(--parchment); border: 1px solid var(--border-strong); border-radius: 10px 10px 2px 10px; padding: 4px 10px; font-size: 12px; margin-bottom: 10px; }
+.activity-row { display: flex; align-items: baseline; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.activity-lbl { font-size: 10px; letter-spacing: 0.08em; color: var(--greige); text-transform: uppercase; }
+.reply-bubble { display: inline-block; background: var(--parchment); border: 1px solid var(--border-strong); border-radius: 10px 10px 2px 10px; padding: 4px 10px; font-size: 12px; }
+.activity-time { font-size: 11px; color: var(--greige); }
 .msg-preview { background: var(--parchment); border-left: 2px solid var(--slate); border-radius: 0 6px 6px 0; padding: 12px 14px; margin-bottom: 14px; }
 .msg-lbl { font-size: 10px; letter-spacing: 0.08em; color: var(--greige); text-transform: uppercase; margin-bottom: 6px; }
 .msg-text { font-size: 13px; line-height: 1.6; }
-.actions { display: flex; align-items: center; gap: 8px; }
-.btn-send { display: flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--dark); color: var(--parchment); border: none; border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; }
-.btn-send:hover { opacity: 0.82; }
-.btn-send:disabled { opacity: 0.35; cursor: default; }
-.btn-ghost { padding: 8px 14px; background: transparent; border: 1px solid var(--border-strong); border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 13px; color: var(--greige); cursor: pointer; }
-.btn-ghost:hover { background: var(--parchment); }
-.reply-note { margin-left: auto; font-size: 11px; color: var(--greige); }
+.schedule-note { font-size: 12px; color: var(--greige); }
 .btn-feedback { padding: 8px 16px; background: var(--success-bg); color: var(--success); border: 1px solid rgba(74,124,89,0.3); border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; }
 .state-msg { text-align: center; padding: 60px 24px; color: var(--greige); }
 .state-msg .ico { font-size: 32px; margin-bottom: 12px; }
@@ -113,49 +117,49 @@ input[type=password]:focus { border-color: var(--slate); }
 </div>
 <div id="toast"></div>
 <script>
-// NOTE: No Airtable token lives here anymore. The client only ever talks to
-// our own /api/experiences proxy, which holds the real Airtable token
-// server-side (see api/experiences.js + Vercel Environment Variables).
+// NOTE: No Airtable token lives here. The client only ever talks to our own
+// /api/experiences proxy, which holds the real Airtable token server-side
+// (see api/experiences.js + Vercel Environment Variables).
+//
+// P3 note: this dashboard is a pure observation surface. P1 (inbound
+// webhook) and P2 (scheduled sweep) own all sending and all Current Step
+// advancement now -- there is intentionally no button anywhere on this page
+// that writes to Airtable. Do not add one back without updating P1/P2 too,
+// or you risk desyncing Current Step from what Twilio actually sent.
 var PASSWORD = 'selfcheckin2026'; // change this and DISPATCH_PASSWORD env var together if you want to rotate it
+var STALL_MINUTES = 90;
 
-// Parses dates in ISO (YYYY-MM-DD), numeric D/M/Y or M/D/Y, and text
-// formats like "Sat. July 11th" -- replaces the old exact-string match
-// that silently dropped any record not in perfect zero-padded DD/MM/YYYY.
-function parseFlexibleDate(input) {
+// Check-In Date comes back from Airtable as a plain ISO date string
+// (YYYY-MM-DD) because it's a real Date-type field now. Parsed as local
+// time so "today"/"tomorrow" compares correctly regardless of viewer TZ.
+function parseIsoDate(input) {
   if (!input) return null;
   if (Array.isArray(input)) input = input[0];
-  input = String(input).trim();
-  if (!input) return null;
-
-  var iso = input.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
-
-  var numeric = input.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (numeric) {
-    var a = Number(numeric[1]), b = Number(numeric[2]), y = Number(numeric[3]);
-    var day, month;
-    if (a > 12) { day = a; month = b; }
-    else if (b > 12) { day = b; month = a; }
-    else { day = a; month = b; } // default assumption: DD/MM, matches original convention
-    return new Date(y, month - 1, day);
-  }
-
-  var monthNames = ['january','february','march','april','may','june','july','august','september','october','november','december'];
-  var lower = input.toLowerCase();
-  for (var m = 0; m < monthNames.length; m++) {
-    if (lower.indexOf(monthNames[m]) !== -1) {
-      var dayMatch = lower.match(/(\d{1,2})/);
-      if (dayMatch) {
-        var yearMatch = lower.match(/(\d{4})/);
-        var year = yearMatch ? Number(yearMatch[1]) : new Date().getFullYear();
-        return new Date(year, m, Number(dayMatch[1]));
-      }
-    }
-  }
-  return null;
+  var m = String(input).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 function sameDay(d1, d2) {
   return !!d1 && !!d2 && d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
+}
+// Message field names: steps 1-2 were renamed for clarity in P2
+// (Message 1 (Eve-Of), Message 2 (Morn-Of)); steps 3-15 stay "Message N".
+function messageField(i) {
+  if (i === 1) return 'Message 1 (Eve-Of)';
+  if (i === 2) return 'Message 2 (Morn-Of)';
+  return 'Message ' + i;
+}
+function fmtTime(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+function minutesSince(iso) {
+  if (!iso) return null;
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return (Date.now() - d.getTime()) / 60000;
 }
 
 function showToast(msg) {
@@ -216,10 +220,10 @@ function loadExperiences() {
   atFetch().then(function(data) {
     var all = data.records || [];
     var todayRecs = all.filter(function(r) {
-      return sameDay(parseFlexibleDate(r.fields['Experience Date']), today);
+      return sameDay(parseIsoDate(r.fields['Check-In Date']), today);
     });
     var tomorrowRecs = all.filter(function(r) {
-      return sameDay(parseFlexibleDate(r.fields['Experience Date']), tomorrow);
+      return sameDay(parseIsoDate(r.fields['Check-In Date']), tomorrow);
     });
     if (todayRecs.length === 0 && tomorrowRecs.length === 0) {
       container.innerHTML = '<div class="state-msg"><div class="ico">✦</div>No experiences today or tomorrow.</div>';
@@ -241,7 +245,7 @@ function loadExperiences() {
     if (tomorrowRecs.length > 0) {
       var div2 = document.createElement('div');
       div2.className = 'day-divider';
-      div2.textContent = 'Experience tomorrow — send eve-of message tonight';
+      div2.textContent = 'Tomorrow — eve-of & morning messages scheduled automatically';
       container.appendChild(div2);
       tomorrowRecs.sort(function(a,b) { return (order[a.fields['Status']]||2)-(order[b.fields['Status']]||2); });
       tomorrowRecs.forEach(function(rec, i) { container.appendChild(buildCard(rec, i, true)); });
@@ -258,17 +262,32 @@ function buildCard(rec, idx, isTomorrow) {
   var initials = String(name).split(' ').map(function(w) { return w[0] || ''; }).join('').slice(0,2).toUpperCase();
   var phone = f['Mobile (from Mobile)'] || f['Phone'] || '';
   var status = f['Status'] || 'New';
+  var mode = f['Mode'] || 'Auto';
   var step = f['Current Step'] != null ? f['Current Step'] : 0;
   var nextMsg = f['Next Message'] || '';
   var lastReply = f['Last Reply'] || '';
   var lastSent = f['Last Sent At'] || '';
+  var lastInbound = f['Last Inbound At'] || '';
+  var scheduled = !!f['Scheduled'];
+
   var totalMsgs = 0;
-  for (var i = 1; i <= 11; i++) { if (f['Message ' + i]) totalMsgs = i; }
+  for (var i = 1; i <= 15; i++) { if (f[messageField(i)]) totalMsgs = i; }
+
   var isComplete = status === 'Complete' || (step >= totalMsgs && totalMsgs > 0);
   var isWaiting = (status === 'New' || status === 'Ready' || status === 'Curating') && step === 0;
-  var avatarCls = isComplete ? 'complete' : isTomorrow ? 'tomorrow' : isWaiting ? 'waiting' : '';
+  var isHold = mode === 'Hold';
+
+  // Stalled = mid-experience (already started, not finished, not just
+  // "tomorrow and not started yet"), and no activity in either direction
+  // for 90+ minutes.
+  var lastActivityIso = (lastInbound && (!lastSent || lastInbound > lastSent)) ? lastInbound : lastSent;
+  var minsIdle = minutesSince(lastActivityIso);
+  var isStalled = !isTomorrow && !isComplete && !isHold && step > 0 && minsIdle !== null && minsIdle >= STALL_MINUTES;
+
+  var avatarCls = isHold ? 'hold' : isComplete ? 'complete' : isTomorrow ? 'tomorrow' : isWaiting ? 'waiting' : '';
   var badgeCls = isComplete ? 'done' : isTomorrow ? 'tmrw' : isWaiting ? 'wt' : 'ip';
   var badgeTxt = isComplete ? 'Complete' : isTomorrow ? 'Tomorrow' : isWaiting ? 'Waiting to start' : 'In progress';
+
   var pipCount = Math.max(totalMsgs, 5);
   var pipsHtml = '';
   for (var p = 0; p < pipCount; p++) {
@@ -276,49 +295,40 @@ function buildCard(rec, idx, isTomorrow) {
     pipsHtml += '<div class="pip ' + cls + '"></div>';
   }
   var stepLbl = isComplete ? 'All ' + totalMsgs + ' sent' : totalMsgs > 0 ? 'Step ' + (step + 1) + ' of ' + totalMsgs : 'Not started';
-  var msgLbl = isTomorrow ? 'Eve-of message' : step === 0 ? 'Opening message' : step === 1 ? 'Morning message' : 'Next message — stop ' + (step - 1);
-  var sendLbl = isTomorrow && step === 0 ? 'Send eve-of message' : step === 0 ? 'Send welcome' : step === 1 ? 'Send morning message' : 'Send stop ' + (step - 1);
+
+  var badges = '<span class="badge ' + badgeCls + '">' + badgeTxt + '</span>';
+  if (isHold) badges += '<span class="badge hold">Hold</span>';
+  if (isStalled) badges += '<span class="badge stall">⚠ Stalled ' + Math.floor(minsIdle) + 'm</span>';
+
   var card = document.createElement('div');
-  card.className = 'card' + (isComplete ? ' complete-card' : '');
+  card.className = 'card' + (isComplete ? ' complete-card' : '') + (isStalled ? ' stalled' : '');
   card.style.animationDelay = (idx * 0.05) + 's';
   card.id = 'card-' + id;
-  var replyBubble = lastReply ? '<div class="reply-bubble">' + esc(lastReply) + ' ✓</div>' : '';
-  var replyNote = lastReply ? '<span class="reply-note">replied "' + esc(lastReply) + '"</span>' : (lastSent && !isTomorrow && step > 1) ? '<span class="reply-note">sent · awaiting reply</span>' : '';
-  var msgBlock = nextMsg ? '<div class="msg-preview"><div class="msg-lbl">' + msgLbl + '</div><div class="msg-text">' + esc(nextMsg) + '</div></div>' : '';
-  if (isComplete) {
-    card.innerHTML = '<div class="card-top"><div class="avatar complete">' + initials + '</div><div><div class="cname">' + esc(name) + '</div><div class="cmeta">' + phone + '</div></div><span class="badge done">Complete</span></div><div class="progress-row">' + pipsHtml + '<span class="pip-lbl">' + stepLbl + '</span></div><div class="actions"><button class="btn-feedback">Send feedback ask</button></div>';
-  } else {
-    card.innerHTML = '<div class="card-top"><div class="avatar ' + avatarCls + '">' + initials + '</div><div><div class="cname">' + esc(name) + '</div><div class="cmeta">' + phone + '</div></div><span class="badge ' + badgeCls + '">' + badgeTxt + '</span></div><div class="progress-row">' + pipsHtml + '<span class="pip-lbl">' + stepLbl + '</span></div>' + replyBubble + msgBlock + '<div class="actions"><button class="btn-send" id="sbtn-' + id + '">↑ ' + sendLbl + '</button>' + replyNote + '</div>';
+
+  // Last activity: what the customer last texted, and when -- or, if they
+  // haven't replied yet, when we last sent something to them.
+  var activityHtml = '';
+  if (lastReply) {
+    activityHtml = '<div class="activity-row"><span class="activity-lbl">Last reply</span><span class="reply-bubble">' + esc(lastReply) + '</span>' + (lastInbound ? '<span class="activity-time">' + fmtTime(lastInbound) + '</span>' : '') + '</div>';
+  } else if (lastSent) {
+    activityHtml = '<div class="activity-row"><span class="activity-lbl">Sent, awaiting reply</span><span class="activity-time">' + fmtTime(lastSent) + '</span></div>';
   }
-  var sendBtn = card.querySelector('.btn-send');
-  if (sendBtn) sendBtn.addEventListener('click', function() { copyAndAdvance(id, isTomorrow); });
+
+  var msgBlock = '';
+  if (isTomorrow) {
+    msgBlock = '<div class="schedule-note">' + (scheduled ? '✓ Eve-of message scheduled for 8pm ET tonight' : 'Not yet scheduled — sweep runs nightly') + '</div>';
+  } else if (nextMsg) {
+    msgBlock = '<div class="msg-preview"><div class="msg-lbl">Next message</div><div class="msg-text">' + esc(nextMsg) + '</div></div>';
+  }
+
+  if (isComplete) {
+    card.innerHTML = '<div class="card-top"><div class="avatar complete">' + initials + '</div><div><div class="cname">' + esc(name) + '</div><div class="cmeta">' + phone + '</div></div><div class="badge-group">' + badges + '</div></div><div class="progress-row">' + pipsHtml + '<span class="pip-lbl">' + stepLbl + '</span></div>' + activityHtml + '<div class="actions"><button class="btn-feedback">Send feedback ask</button></div>';
+  } else {
+    card.innerHTML = '<div class="card-top"><div class="avatar ' + avatarCls + '">' + initials + '</div><div><div class="cname">' + esc(name) + '</div><div class="cmeta">' + phone + '</div></div><div class="badge-group">' + badges + '</div></div><div class="progress-row">' + pipsHtml + '<span class="pip-lbl">' + stepLbl + '</span></div>' + activityHtml + msgBlock;
+  }
   var fbBtn = card.querySelector('.btn-feedback');
   if (fbBtn) fbBtn.addEventListener('click', function() { showToast('Feedback message — send manually via Twilio'); });
   return card;
-}
-function copyAndAdvance(recordId, isTomorrow) {
-  var btn = document.getElementById('sbtn-' + recordId);
-  if (btn) { btn.disabled = true; btn.textContent = 'Working...'; }
-  atFetch(recordId).then(function(rec) {
-    var f = rec.fields;
-    var nextMsg = f['Next Message'] || '';
-    var step = f['Current Step'] != null ? f['Current Step'] : 0;
-    if (nextMsg) { try { navigator.clipboard.writeText(nextMsg); } catch(e) {} }
-    if (isTomorrow) {
-      showToast('Eve-of message copied — paste into Twilio');
-      if (btn) { btn.disabled = false; btn.textContent = '↑ Send eve-of message'; }
-      return Promise.resolve();
-    }
-    return atFetch(recordId, 'PATCH', { fields: { 'Current Step': step + 1, 'Last Sent At': new Date().toISOString() } });
-  }).then(function() {
-    if (!isTomorrow) {
-      showToast('Copied to clipboard · Step advanced');
-      setTimeout(loadExperiences, 800);
-    }
-  }).catch(function(err) {
-    showToast('Error: ' + err.message);
-    if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
-  });
 }
 function esc(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
