@@ -7,8 +7,16 @@
 // human voice instead of the automated sequence.
 //
 // This does NOT touch Current Step, Mode, or any sequence field -- it only
-// sends the message and stamps Last Sent At, so the dashboard's stall
-// detection doesn't keep flagging a conversation Amanda just handled.
+// sends the message and stamps Last Manual Reply At, so the dashboard's
+// stall detection doesn't keep flagging a conversation Amanda just handled.
+//
+// IMPORTANT: this must NOT write Last Sent At. api/inbound.js reads Last
+// Sent At for its 60-second double-tap guard (ignore a customer's
+// accidental double "next" right after an automated send). A manual reply
+// used to write that same field, which meant a legitimate "next" arriving
+// within 60s of a manual reply got silently swallowed -- no reply, no
+// Current Step advance, nothing. Found via live P4 end-to-end testing,
+// fixed 2026-07-16 by giving manual replies their own field.
 //
 // Required Vercel env vars: none new. Reuses TWILIO_ACCOUNT_SID,
 // TWILIO_AUTH_TOKEN, AIRTABLE_TOKEN, DISPATCH_PASSWORD -- all already

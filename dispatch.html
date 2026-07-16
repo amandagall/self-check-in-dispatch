@@ -107,6 +107,10 @@ input[type=password]:focus { border-color: var(--slate); }
 .btn-reply-send { padding: 6px 14px; font-size: 12px; background: var(--dark); color: var(--parchment); border: none; border-radius: 6px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
 .btn-reply-send:disabled { opacity: 0.4; cursor: default; }
 .btn-reply-cancel { padding: 6px 14px; font-size: 12px; background: transparent; border: 1px solid var(--border-strong); border-radius: 6px; cursor: pointer; color: var(--greige); font-family: 'DM Sans', sans-serif; }
+/* Columns split the board's width evenly (flex: 1 1 0 gives every column
+   equal share regardless of card count), so with the usual two columns
+   -- Morning / Afternoon -- the divider between them lands dead center.
+   On narrow viewports they stack instead of squeezing into slivers. */
 .board { display: flex; gap: 0; padding: 2px 2px 12px; align-items: flex-start; }
 .board-col { flex: 1 1 0; min-width: 0; padding-right: 24px; margin-right: 24px; border-right: 1px solid var(--border); }
 .board-col:last-child { border-right: none; margin-right: 0; padding-right: 2px; }
@@ -174,8 +178,12 @@ input[type=password]:focus { border-color: var(--slate); }
 // Twilio message P2's sweep already scheduled (Eve-Of/Morning Message SID)
 // -- a plain field write alone wouldn't actually stop a queued message,
 // since Twilio doesn't check Airtable at send time. The reply box sends a
-// raw SMS via api/reply.js and stamps Last Sent At so the stall badge
-// doesn't stay stuck on a conversation Amanda just handled herself.
+// raw SMS via api/reply.js and stamps Last Manual Reply At (its own field,
+// not Last Sent At) so the stall badge doesn't stay stuck on a conversation
+// Amanda just handled herself. It used to write Last Sent At directly, but
+// that collided with inbound.js's 60-second double-tap guard -- a manual
+// reply would silently swallow a customer's next legitimate "next" text if
+// it landed within 60s. Found via live P4 testing, fixed 2026-07-16.
 var PASSWORD = 'selfcheckin2026'; // change this and DISPATCH_PASSWORD env var together if you want to rotate it
 var STALL_MINUTES = 90;
 
@@ -225,9 +233,15 @@ function isRecordComplete(f) {
 function isRecordHold(f) {
   return (f['Mode'] || 'Auto') === 'Hold';
 }
-// Stalled = mid-experience (already started, not finished, not just
-// "tomorrow and not started yet"), and no activity in either direction for
-// 90+ minutes.
+// "Activity" = the most recent of: an automated send (Last Sent At, written
+// by inbound.js/sweep.js), a customer reply (Last Inbound At), or a manual
+// reply Amanda sent from the dashboard (Last Manual Reply At, written by
+// reply.js). Manual replies deliberately live in their own field rather than
+// reusing Last Sent At -- see api/inbound.js's double-tap guard, which reads
+// Last Sent At to ignore a customer's accidental double "next" within 60s of
+// an automated send. If a manual reply also wrote that field, a legitimate
+// "next" arriving within 60s of Amanda's reply would get silently swallowed
+// the same way (found via live P4 testing, 2026-07-16).
 function latestActivityIso(f) {
   var candidates = [f['Last Sent At'], f['Last Inbound At'], f['Last Manual Reply At']];
   var latest = '';
@@ -237,6 +251,9 @@ function latestActivityIso(f) {
   }
   return latest;
 }
+// Stalled = mid-experience (already started, not finished, not just
+// "tomorrow and not started yet"), and no activity in either direction for
+// 90+ minutes.
 function isRecordStalled(f, isTomorrow) {
   var step = f['Current Step'] != null ? f['Current Step'] : 0;
   var minsIdle = minutesSince(latestActivityIso(f));
@@ -576,6 +593,7 @@ function buildCard(rec, idx, isTomorrow) {
   var lastReply = f['Last Reply'] || '';
   var lastSent = f['Last Sent At'] || '';
   var lastInbound = f['Last Inbound At'] || '';
+  var lastManualReply = f['Last Manual Reply At'] || '';
   var scheduled = !!f['Scheduled'];
   var windowTag = windowTagText(getWindowKey(f));
 
@@ -611,7 +629,6 @@ function buildCard(rec, idx, isTomorrow) {
 
   // Last activity: what the customer last texted, and when -- or, if they
   // haven't replied yet, when we last sent something to them.
-  var lastManualReply = f['Last Manual Reply At'] || '';
   var activityHtml = '';
   if (lastManualReply && lastManualReply > (lastInbound || '') && lastManualReply > (lastSent || '')) {
     activityHtml = '<div class="activity-row"><span class="activity-lbl">You replied</span><span class="activity-time">' + fmtTime(lastManualReply) + '</span></div>';
