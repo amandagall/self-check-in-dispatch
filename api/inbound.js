@@ -9,6 +9,12 @@
 //   3. If the reply is Negative, keep the record open for exactly one more inbound
 //      text (the answer to "would you be open to sharing a bit more?") and log it
 //      to a dedicated Feedback Follow-Up field.
+//   4. FIXED July 16, 2026 (race condition): Awaiting Feedback is set true at Close
+//      time, but the real feedback question isn't delivered until ~2 hours later via
+//      Twilio's scheduler. Any inbound text from the customer during that gap was being
+//      wrongly consumed as their feedback answer, so their real reply later went
+//      unrecognized. Fixed by only treating an inbound text as the feedback answer once
+//      the scheduled send time (Feedback Sent At) has actually passed.
 //
 // Everything below marked "--- FEEDBACK AUTOMATION ---" is new. Everything else is
 // unchanged from the version documented in "SCI Dispatch — SMS Automation P1."
@@ -43,6 +49,16 @@ function buildPositiveReply(couponCode) {
     ? " If there's someone in your life who could use a day like this, feel free to pass along your code — " + couponCode + " — for $15 off their first experience."
     : " If there's someone in your life who could use a day like this, feel free to pass us along.";
   return base + referral + " We're always here.";
+}
+
+// FIXED July 16, 2026: Awaiting Feedback flips true at Close time, but the real
+// question isn't delivered until Feedback Sent At (~2 hours later via Twilio's
+// scheduler). A reply that arrives before that time is not an answer to the feedback
+// question — it's just a stray text — and should NOT be consumed by the feedback branch.
+// No Feedback Sent At on record is treated as "already due" (fail open, matches old behavior).
+function feedbackQuestionIsDue(fields) {
+  if (!fields['Feedback Sent At']) return true;
+  return Date.now() >= new Date(fields['Feedback Sent At']).getTime();
 }
 // --- END FEEDBACK AUTOMATION ---
 
@@ -219,7 +235,14 @@ module.exports = async (req, res) => {
   // If we're waiting on this customer's reply to the feedback question, handle it here,
   // before Hold/keyword logic — this is free text, not a next/done reply, and should
   // never fall through to the "forward unmatched reply to Amanda" path.
-  if (fields['Awaiting Feedback']) {
+  // FIXED July 16, 2026: also require that the scheduled feedback question has actually
+  // been sent (Feedback Sent At has passed). Awaiting Feedback flips true at Close time,
+  // ~2 hours before Twilio delivers the real question — without this gate, any stray text
+  // from the customer during that gap gets wrongly consumed as their feedback answer,
+  // leaving their real reply later unrecognized. Found via a live test: a text sent 1h27m
+  // after Close got treated as the feedback answer, so the reply to the actual question
+  // at the 2-hour mark fell through to the generic "forward to Amanda" path instead.
+  if (fields['Awaiting Feedback'] && feedbackQuestionIsDue(fields)) {
     const sentiment = await classifyFeedback(body);
     const couponCode = (fields['Coupon Code'] && fields['Coupon Code'][0]) || '';
     const branchMessage = sentiment === 'Positive'
