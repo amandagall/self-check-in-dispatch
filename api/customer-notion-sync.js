@@ -498,7 +498,16 @@ module.exports = async (req, res) => {
     const data = {
       name: fields['Name'] || 'Unknown',
       profileCode: fields['Profile Code'] || '',
-      tier: expFields['Tier'] || '',
+      // Defaults to Half Day for now (the only tier currently offered).
+      // This is a backstop, not the source of truth -- Airtable should also
+      // set Tier = Half Day on Experience creation directly (see the
+      // "Customer->Experience Automation"). This just guards against the
+      // case where this webhook reads the Experience record before that
+      // separate automation has finished writing it -- Airtable doesn't
+      // guarantee one automation completes before another, independently
+      // triggered one reacts to the change it made. Once Full Day / Weekend
+      // are real options, this default needs to go, not update to a guess.
+      tier: expFields['Tier'] || 'Half Day',
       constraints: fields['Constraints'] || '',
       experienceDate: formatExperienceDate(fields['Check-In Date']),
       startTime: start,
