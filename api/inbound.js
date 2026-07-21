@@ -26,7 +26,7 @@
 const crypto = require('crypto');
 
 const WEBHOOK_URL = 'https://self-check-in-experiences.vercel.app/api/inbound';
-const ADVANCE_KEYWORDS = ['next', 'done'];
+const ADVANCE_KEYWORDS = ['next', 'done', 'start'];
 const HOLDING_MESSAGE = "Quick pause on our end - we'll be right back with you.";
 const DOUBLE_TAP_WINDOW_MS = 60 * 1000;
 
