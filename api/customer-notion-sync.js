@@ -485,7 +485,7 @@ function buildPageChildren(data) {
     bulleted(`Experience date: ${data.experienceDate}`),
     bulleted(`Estimated start time: ${data.startTime}`),
     bulleted(`Estimated end time: ${data.endTime}`),
-    bulleted('Arc logic: [One sentence]'),
+    bulleted(`Arc logic: ${data.arc ? data.arc.arcLogic : '[One sentence]'}`),
     bulleted('Anchor booking: [Vendor, time, neutral client-facing line — or None]'),
     bulleted('Packing notes: [Item / Item / Item]'),
     bulleted('Q6 overrides affecting messaging: [e.g. Can\'t drink alcohol / None]'),
