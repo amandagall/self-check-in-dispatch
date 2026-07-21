@@ -261,7 +261,9 @@ async function generateEmotionalArc(fields) {
     body: JSON.stringify({
       model: 'claude-sonnet-5',
       max_tokens: 500,
-      temperature: 0.7,
+      // No `temperature` -- this model rejects it with a 400 ("`temperature`
+      // is deprecated for this model"), unlike the Haiku model used for
+      // feedback classification in inbound.js.
       system: EMOTIONAL_ARC_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: JSON.stringify(intake) }],
     }),
