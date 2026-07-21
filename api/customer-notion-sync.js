@@ -592,12 +592,22 @@ module.exports = async (req, res) => {
       // (e.g. "Paid"), not an {id, name, color} object -- same MCP-vs-raw-API
       // distinction as the linked-record fix above.
       paymentStatus: fields['Payment Status'] || '',
-      // Best-effort: if the Claude call fails or returns something malformed,
-      // arc stays null and buildPageChildren falls back to the template's
-      // bracketed placeholders -- Emotional Arc generation should never be
-      // the reason a customer page fails to get created.
-      arc: await generateEmotionalArc(fields).catch(() => null),
     };
+
+    // Best-effort: if the Claude call fails or returns something malformed,
+    // arc stays null and buildPageChildren falls back to the template's
+    // bracketed placeholders -- Emotional Arc generation should never be the
+    // reason a customer page fails to get created. arcError is surfaced in
+    // the response below (visible in the Airtable script's Test output / run
+    // history) specifically so a silent fallback here doesn't also become an
+    // undebuggable one.
+    let arcError = null;
+    try {
+      data.arc = await generateEmotionalArc(fields);
+    } catch (err) {
+      data.arc = null;
+      arcError = err.message;
+    }
 
     const title = `${data.name} - ${formatTitleDate(fields['Check-In Date'])} Customer Experience Page`;
     // Same as the Notion page title, minus the trailing "Page" -- this is
@@ -621,7 +631,7 @@ module.exports = async (req, res) => {
       }),
     ]);
 
-    res.status(200).json({ ok: true, url: page.url });
+    res.status(200).json({ ok: true, url: page.url, arcGenerated: !!data.arc, arcError: arcError || undefined });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
