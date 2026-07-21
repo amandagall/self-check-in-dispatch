@@ -510,6 +510,9 @@ module.exports = async (req, res) => {
     };
 
     const title = `${data.name} - ${formatTitleDate(fields['Check-In Date'])} Customer Experience Page`;
+    // Same as the Notion page title, minus the trailing "Page" -- this is
+    // what gets written to Experiences.Experience Name below.
+    const experienceName = title.replace(/ Page$/, '');
 
     // Best-effort: if the heading ever gets renamed/removed, fall back to
     // Notion's default (append at the end) rather than failing the whole run.
@@ -517,10 +520,16 @@ module.exports = async (req, res) => {
 
     const page = await createPageChunked(CUSTOMERS_PAGE_ID, title, buildPageChildren(data), afterBlockId);
 
-    await airtable(CUSTOMERS_TABLE_ID, `/${recordId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ fields: { 'Notion Page URL': page.url } }),
-    });
+    await Promise.all([
+      airtable(CUSTOMERS_TABLE_ID, `/${recordId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ fields: { 'Notion Page URL': page.url } }),
+      }),
+      airtable(EXPERIENCES_TABLE_ID, `/${linkedExperiences[0]}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ fields: { 'Experience Name': experienceName } }),
+      }),
+    ]);
 
     res.status(200).json({ ok: true, url: page.url });
   } catch (err) {
