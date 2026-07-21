@@ -267,7 +267,19 @@ async function generateEmotionalArc(fields) {
     }),
   });
   const data = await res.json();
+
+  // Surface the real cause instead of letting a missing `content` array turn
+  // into an opaque "Unexpected end of JSON input" a few lines down. An
+  // Anthropic API error response (bad key, rate limit, bad model name, etc.)
+  // has no `content` array at all -- it has `data.error` instead.
+  if (!res.ok || data.error) {
+    throw new Error(`Anthropic API error (HTTP ${res.status}): ${(data.error && data.error.message) || JSON.stringify(data)}`);
+  }
+
   const raw = ((data.content && data.content[0] && data.content[0].text) || '').trim();
+  if (!raw) {
+    throw new Error('Anthropic API returned an empty response');
+  }
   const parsed = JSON.parse(raw); // let this throw -- caller catches and falls back to placeholders.
   if (!parsed.from || !parsed.to || !parsed.arcLogic || !parsed.keyCurationSignal) {
     throw new Error('Emotional Arc response missing a required field');
