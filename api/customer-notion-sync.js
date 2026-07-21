@@ -203,6 +203,78 @@ function splitCheckInTime(rangeStr) {
   return { start: fmt(startRaw), end: fmt(endRaw) };
 }
 
+// ---------- Emotional Arc generation (Claude) ----------
+//
+// Automates the step Amanda already does by hand: turning a customer's raw
+// intake answers into the Emotional Arc section (From / To / Arc logic / Key
+// Curation Signal). This is a best-effort enhancement, not a hard
+// requirement -- if it fails for any reason (bad API key, rate limit,
+// malformed response), the caller falls back to the template's bracketed
+// placeholders rather than blocking page creation. Reuses ANTHROPIC_API_KEY,
+// already required for the feedback-classification step in api/inbound.js --
+// no new env var needed.
+//
+// Uses a stronger model than the Haiku classification call in inbound.js:
+// this is curation writing Alicia relies on as a brief, not a one-word
+// classification, so it's worth the extra cost/latency.
+const EMOTIONAL_ARC_SYSTEM_PROMPT = `You write the "Emotional Arc" section of a Self Check-In customer page, from a customer's intake answers. Self Check-In is a wellness experience product: customers describe how they feel and how they want to feel, and receive a curated real-world itinerary. You are given their five intake answers (each a single-select option, described below), any celebration note, any constraints, and their Profile Code. Write four fields in Amanda and Alicia's established voice, grounded in this specific customer's actual answers -- not generic, not inventing feelings they didn't indicate.
+
+Intake question axes:
+- weekContext (Q1 "How was your week?"): opening behavioural read, not emotional label.
+- whyToday (Q2 "What made you look for something like this today?"): their stated reason for booking.
+- bodyState (Q3 "Right now, are you more wired or more flat?"): the single most important curation axis -- physical/somatic state.
+- desiredFeeling (Q4 "How do you want to feel when this is over?"): forward-facing, aspirational target state.
+- socialBattery (Q5 "What does your social battery feel like right now?"): determines whether stops need to be low-stimulation/solo or include gentle human connection.
+
+Worked example (real customer, for voice/calibration only -- do not reuse this content):
+Input: bodyState="Flat — low energy, a bit numb", desiredFeeling="Energized and inspired", whyToday="I want to do something just for me", socialBattery="Neutral — whatever the day calls for", weekContext="Busy but manageable", Profile Code="P07-FLAT-REAWAKEN"
+Output:
+{"from": "Numb and disconnected", "to": "Wants to feel like themselves again and energized.", "arcLogic": "Gentle re-engagement with the senses. Light, warmth, taste, texture. Sequence: gentle stimulation → genuine pleasure → reflection space.", "keyCurationSignal": "Needs gentle sensory stimulation, not rescue. Something with texture and beauty — a food experience, art, nature with sensory interest (sound, smell). A class with gentle guidance. Avoid anything passive or heavy."}
+
+Field guidance:
+- from: short phrase, how they said they're feeling -- a faithful paraphrase of bodyState (and weekContext where relevant), not a verbatim copy of the select option label.
+- to: short phrase/sentence, how they want to feel -- grounded in desiredFeeling.
+- arcLogic: one or two sentences, why a sequence moving from "from" to "to" makes emotional sense for this profile. Written for Alicia to use as a curation brief -- concrete enough to guide stop selection, not abstract.
+- keyCurationSignal: two to four sentences. The single most important thing curating this itinerary needs to get right (usually driven by bodyState + socialBattery), concrete guidance on what kind of stops fit and what to avoid.
+
+Respond with ONLY a JSON object with exactly these four keys: from, to, arcLogic, keyCurationSignal. No markdown, no code fences, no other text.`;
+
+async function generateEmotionalArc(fields) {
+  const intake = {
+    weekContext: fields['Q1 · Week Context'] || '',
+    whyToday: fields['Q2 · Why Today'] || '',
+    bodyState: fields['Q3 · Body State'] || '',
+    desiredFeeling: fields['Q4 · Desired Feeling'] || '',
+    socialBattery: fields['Q5 · Social Battery'] || '',
+    celebrating: fields['What are you celebrating?'] || '',
+    constraints: fields['Constraints'] || '',
+    profileCode: fields['Profile Code'] || '',
+  };
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-5',
+      max_tokens: 500,
+      temperature: 0.7,
+      system: EMOTIONAL_ARC_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: JSON.stringify(intake) }],
+    }),
+  });
+  const data = await res.json();
+  const raw = ((data.content && data.content[0] && data.content[0].text) || '').trim();
+  const parsed = JSON.parse(raw); // let this throw -- caller catches and falls back to placeholders.
+  if (!parsed.from || !parsed.to || !parsed.arcLogic || !parsed.keyCurationSignal) {
+    throw new Error('Emotional Arc response missing a required field');
+  }
+  return parsed;
+}
+
 // ---------- Template content (mirrors "TEMPLATE — Customer Experience Page") ----------
 
 function stopBlocks(n) {
@@ -337,18 +409,22 @@ function buildPageChildren(data) {
     divider(),
 
     heading2('Emotional Arc'),
-    paragraphRich(boldThenPlain('From: ', "[How they said they're feeling — use their exact intake language]")),
-    paragraphRich(boldThenPlain('To: ', '[How they want to feel — use their exact intake language]')),
+    paragraphRich(boldThenPlain('From: ', data.arc ? data.arc.from : "[How they said they're feeling — use their exact intake language]")),
+    paragraphRich(boldThenPlain('To: ', data.arc ? data.arc.to : '[How they want to feel — use their exact intake language]')),
     paragraphRich(
       boldThenPlain(
         'Arc logic: ',
-        '[One or two sentences on why this sequence makes emotional sense for this profile. Written for Alicia to use as a curation brief.]'
+        data.arc
+          ? data.arc.arcLogic
+          : '[One or two sentences on why this sequence makes emotional sense for this profile. Written for Alicia to use as a curation brief.]'
       )
     ),
     paragraphRich(
       boldThenPlain(
         'Key Curation Signal: ',
-        '[example: The key curation signal here is "somewhere in between" — she\'s not depleted enough to need pure rest, but she doesn\'t have energy to spend either. Stops should be sensory and self-directed, not demanding.]'
+        data.arc
+          ? data.arc.keyCurationSignal
+          : '[example: The key curation signal here is "somewhere in between" — she\'s not depleted enough to need pure rest, but she doesn\'t have energy to spend either. Stops should be sensory and self-directed, not demanding.]'
       )
     ),
     divider(),
@@ -516,6 +592,11 @@ module.exports = async (req, res) => {
       // (e.g. "Paid"), not an {id, name, color} object -- same MCP-vs-raw-API
       // distinction as the linked-record fix above.
       paymentStatus: fields['Payment Status'] || '',
+      // Best-effort: if the Claude call fails or returns something malformed,
+      // arc stays null and buildPageChildren falls back to the template's
+      // bracketed placeholders -- Emotional Arc generation should never be
+      // the reason a customer page fails to get created.
+      arc: await generateEmotionalArc(fields).catch(() => null),
     };
 
     const title = `${data.name} - ${formatTitleDate(fields['Check-In Date'])} Customer Experience Page`;
