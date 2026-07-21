@@ -50,7 +50,8 @@
 const CUSTOMERS_TABLE_ID = 'tblYf7o2C9kpfwvUO';
 const EXPERIENCES_TABLE_ID = 'tblNkbMaOWPXIjyYG';
 const CUSTOMERS_PAGE_ID = '34e44f2dd74a8006ad40e2a961d0fdbc'; // Notion "Customers" page -- new pages are created as children of this page.
-const NOTION_VERSION = '2022-06-28';
+const LAND_UNDER_HEADING = 'Paid Customers'; // new customer pages should land right under this heading, not at the end of the page.
+const NOTION_VERSION = '2026-03-11'; // needs to be recent enough to support the "position" param on page creation (see findHeadingBlockId below).
 
 async function airtable(tableId, path, options = {}) {
   const BASE_ID = process.env.AIRTABLE_BASE_ID || 'appUWpk3MAaug3iMO';
@@ -81,6 +82,28 @@ async function notion(path, options = {}) {
     throw new Error(`Notion API error (${data.code}): ${data.message}`);
   }
   return data;
+}
+
+// Finds the block ID of a top-level heading on a page, by its exact text --
+// e.g. so new customer pages can be inserted right under "Paid Customers"
+// instead of landing at the bottom of the Customers page. Looked up at
+// runtime (rather than hardcoding a block ID) so it keeps working if the
+// heading block ever gets recreated -- Notion doesn't preserve a block's ID
+// across a delete/retype, but the text stays findable.
+async function findHeadingBlockId(pageId, headingText) {
+  let cursor;
+  do {
+    const qs = cursor ? `?start_cursor=${encodeURIComponent(cursor)}` : '';
+    const data = await notion(`/blocks/${pageId}/children${qs}`);
+    for (const block of data.results || []) {
+      const richText = block[block.type] && block[block.type].rich_text;
+      if (richText && richText.map((r) => r.plain_text).join('').trim() === headingText) {
+        return block.id;
+      }
+    }
+    cursor = data.has_more ? data.next_cursor : null;
+  } while (cursor);
+  return null; // heading not found -- caller falls back to appending at the end.
 }
 
 // ---------- Notion block builders ----------
@@ -390,20 +413,27 @@ function buildPageChildren(data) {
 }
 
 // Notion caps children arrays at 100 blocks per call. Create with the first
-// chunk, then append the rest.
-async function createPageChunked(parentId, title, children) {
+// chunk, then append the rest. `afterBlockId`, if given, places the new page
+// right after that block within the parent's content (see
+// findHeadingBlockId) instead of Notion's default of appending at the end.
+async function createPageChunked(parentId, title, children, afterBlockId) {
   const CHUNK = 100;
   const first = children.slice(0, CHUNK);
   const rest = children.slice(CHUNK);
 
+  const body = {
+    parent: { page_id: parentId },
+    icon: { type: 'emoji', emoji: '📝' },
+    properties: { title: { title: [{ type: 'text', text: { content: title } }] } },
+    children: first,
+  };
+  if (afterBlockId) {
+    body.position = { type: 'after_block', after_block: { id: afterBlockId } };
+  }
+
   const page = await notion('/pages', {
     method: 'POST',
-    body: JSON.stringify({
-      parent: { page_id: parentId },
-      icon: { type: 'emoji', emoji: '📝' },
-      properties: { title: { title: [{ type: 'text', text: { content: title } }] } },
-      children: first,
-    }),
+    body: JSON.stringify(body),
   });
 
   for (let i = 0; i < rest.length; i += CHUNK) {
@@ -456,7 +486,11 @@ module.exports = async (req, res) => {
       return;
     }
 
-    const experience = await airtable(EXPERIENCES_TABLE_ID, `/${linkedExperiences[0].id}`);
+    // Raw Airtable REST API returns linked-record fields as plain record ID
+    // strings (e.g. ["rec5bKGm0aOVKsatF"]), not {id, name} objects -- that
+    // richer shape is an Airtable MCP-tool convenience, not what this
+    // fetch() call gets back. Indexing straight into the array is correct.
+    const experience = await airtable(EXPERIENCES_TABLE_ID, `/${linkedExperiences[0]}`);
     const expFields = experience.fields || {};
 
     const { start, end } = splitCheckInTime(fields['Check-In Time']);
@@ -469,12 +503,19 @@ module.exports = async (req, res) => {
       experienceDate: formatExperienceDate(fields['Check-In Date']),
       startTime: start,
       endTime: end,
-      paymentStatus: (fields['Payment Status'] && fields['Payment Status'].name) || fields['Payment Status'] || '',
+      // singleSelect fields come back as a plain string from the raw REST API
+      // (e.g. "Paid"), not an {id, name, color} object -- same MCP-vs-raw-API
+      // distinction as the linked-record fix above.
+      paymentStatus: fields['Payment Status'] || '',
     };
 
     const title = `${data.name} - ${formatTitleDate(fields['Check-In Date'])} Customer Experience Page`;
 
-    const page = await createPageChunked(CUSTOMERS_PAGE_ID, title, buildPageChildren(data));
+    // Best-effort: if the heading ever gets renamed/removed, fall back to
+    // Notion's default (append at the end) rather than failing the whole run.
+    const afterBlockId = await findHeadingBlockId(CUSTOMERS_PAGE_ID, LAND_UNDER_HEADING).catch(() => null);
+
+    const page = await createPageChunked(CUSTOMERS_PAGE_ID, title, buildPageChildren(data), afterBlockId);
 
     await airtable(CUSTOMERS_TABLE_ID, `/${recordId}`, {
       method: 'PATCH',
