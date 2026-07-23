@@ -36,6 +36,17 @@ const CHECK_IN_WINDOWS = {
   '12pm-4pm': { startHour: 12, startMinute: 0, endHour: 16, endMinute: 0 },
 };
 
+// Maps the Cross City Routing single-select value (Airtable Customers field
+// -- note the trailing space in the actual field name, 'Cross City Routing ')
+// to the phrase used in the confirmation email. Keys must match the Airtable
+// option text exactly -- if that option label is ever reworded in Airtable,
+// update this map too, or the acknowledgment line silently stops appearing
+// instead of erroring.
+const ROUTING_PHRASES = {
+  'Keep it close — one area, minimal moving around': 'stay close to one part of the city',
+  "Wherever fits best — I don't mind covering more ground": 'go wherever fits best, even if that means covering some ground',
+};
+
 async function airtable(path, options = {}) {
   const url = `https://api.airtable.com/v0/${BASE_ID}/${CUSTOMERS_TABLE_ID}${path}`;
   const res = await fetch(url, {
@@ -95,8 +106,24 @@ function buildCalendarUrl(dateStr, checkInTime) {
   return 'https://calendar.google.com/calendar/render?' + params.toString();
 }
 
-function buildEmail(firstName, displayDate, calendarUrl) {
+function buildEmail(firstName, displayDate, calendarUrl, routingPhrase) {
   const subject = `Your Self Check-In is booked for ${displayDate}!`;
+
+  // Best-effort acknowledgment of the customer's Cross City Routing choice --
+  // resolves to null if the field was blank or didn't match ROUTING_PHRASES,
+  // in which case both templates below render it as an empty string and the
+  // email looks exactly like it did before this was added. Never blocks the
+  // send.
+  const routingParagraphText = routingPhrase
+    ? `You told us you'd like your day to ${routingPhrase} — we'll build around that.\n\n`
+    : '';
+  const routingParagraphHtml = routingPhrase
+    ? `<tr><td style="font-family:'DM Sans', -apple-system, Helvetica, Arial, sans-serif; font-size:16px; line-height:1.7; color:#2C2820; padding-bottom:20px;">
+You told us you'd like your day to ${routingPhrase} — we'll build around that.
+</td></tr>
+
+`
+    : '';
 
   const text = `Hi ${firstName},
 
@@ -109,7 +136,7 @@ Your experience will be delivered via text message to the phone number you provi
 
 If you need to reschedule your Self Check-In, just let us know at least 24 hours in advance and we'll sort it out.
 
-We'll contact you the evening before to remind you about your Self Check-In and anything you'll need to pack for your day.
+${routingParagraphText}We'll contact you the evening before to remind you about your Self Check-In and anything you'll need to pack for your day.
 
 If you need additional information about a stop we send you to, there will be a link in the SMS message. We've put together custom venue details -- parking, accessibility, and other useful links -- so click those when they come through.
 
@@ -172,7 +199,7 @@ Your experience will be delivered via text message to the phone number you provi
 If you need to reschedule your Self Check-In, just let us know at least 24 hours in advance and we'll sort it out.
 </td></tr>
 
-<tr><td style="font-family:'DM Sans', -apple-system, Helvetica, Arial, sans-serif; font-size:16px; line-height:1.7; color:#2C2820; padding-bottom:20px;">
+${routingParagraphHtml}<tr><td style="font-family:'DM Sans', -apple-system, Helvetica, Arial, sans-serif; font-size:16px; line-height:1.7; color:#2C2820; padding-bottom:20px;">
 We'll contact you the evening before to remind you about your Self Check-In and anything you'll need to pack for your day.
 </td></tr>
 
@@ -259,6 +286,9 @@ module.exports = async (req, res) => {
     const firstName = name.trim().split(/\s+/)[0] || 'there';
     const checkInDate = firstValue(fields['Check-In Date']);
     const checkInTime = firstValue(fields['Check-In Time']);
+    // Trailing space in the field name matches Airtable exactly (same
+    // gotcha documented in api/customer-notion-sync.js).
+    const routingPhrase = ROUTING_PHRASES[fields['Cross City Routing ']] || null;
 
     if (!email) {
       res.status(400).json({ error: 'No Email on this Customer record' });
@@ -271,7 +301,7 @@ module.exports = async (req, res) => {
 
     const displayDate = formatDisplayDate(checkInDate);
     const calendarUrl = buildCalendarUrl(checkInDate, checkInTime);
-    const emailContent = buildEmail(firstName, displayDate, calendarUrl);
+    const emailContent = buildEmail(firstName, displayDate, calendarUrl, routingPhrase);
 
     const sendResult = await sendViaResend(email, emailContent);
 
