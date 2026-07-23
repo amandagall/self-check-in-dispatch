@@ -118,16 +118,81 @@ Can't wait for you to have this day. You deserve it.
 Amanda & Alicia
 Self Check-In`;
 
-  const html = `<p>Hi ${firstName},</p>
-<p>Your Self Check-In is booked for <strong>${displayDate}</strong>.<br>
-Add it to your calendar so it's waiting for you: <a href="${calendarUrl}">${calendarUrl}</a></p>
-<p><strong>Things to know:</strong></p>
-<p>Your experience will be delivered via text message to the phone number you provided us with on the day. You'll hear from us at ${OUR_NUMBER_DISPLAY} -- save that number to your phone now so our messages come through.</p>
-<p>If you need to reschedule your Self Check-In, just let us know at least 24 hours in advance and we'll sort it out.</p>
-<p>We'll contact you the evening before to remind you about your Self Check-In and anything you'll need to pack for your day.</p>
-<p>If you need additional information about a stop we send you to, there will be a link in the SMS message. We've put together custom venue details -- parking, accessibility, and other useful links -- so click those when they come through.</p>
-<p>Can't wait for you to have this day. You deserve it.</p>
-<p>Amanda &amp; Alicia<br>Self Check-In</p>`;
+  // Colours and type from Notion > Brand & Voice > Branding Guidelines
+  // (Colour Palette + Typography pages) -- not invented here.
+  //   Warm Parchment #F8F0E3  primary background
+  //   Dark Brown     #2C2820  primary text
+  //   Warm Slate     #6B7B8D  accent (replaced Terracotta May 29, 2026)
+  //   Warm Greige    #787362  mid-tone / supporting, small labels
+  // Cormorant Garamond (weight 500) for the headline only, generous size,
+  // never bold, never small. DM Sans for all body copy, never bold, never
+  // used for the headline. Web fonts are best-effort in email clients --
+  // Georgia/system-serif and system-sans fallbacks carry the same warmth
+  // contrast where Cormorant/DM Sans don't load (Outlook, etc).
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500&family=DM+Sans:wght@400&display=swap">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500&family=DM+Sans:wght@400&display=swap');
+</style>
+</head>
+<body style="margin:0; padding:0; background-color:#F8F0E3;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F8F0E3;">
+<tr><td align="center" style="padding:48px 24px;">
+<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px; width:100%;">
+
+<tr><td style="padding-bottom:32px;">
+<div style="font-family:'Cormorant Garamond', Georgia, 'Times New Roman', serif; font-weight:500; font-size:32px; line-height:1.3; color:#2C2820;">
+Your Self Check-In is booked for ${displayDate}.
+</div>
+</td></tr>
+
+<tr><td style="font-family:'DM Sans', -apple-system, Helvetica, Arial, sans-serif; font-size:16px; line-height:1.7; color:#2C2820; padding-bottom:8px;">
+Hi ${firstName},
+</td></tr>
+
+<tr><td style="font-family:'DM Sans', -apple-system, Helvetica, Arial, sans-serif; font-size:16px; line-height:1.7; color:#2C2820; padding-bottom:28px;">
+Add it to your calendar so it's waiting for you:<br>
+<a href="${calendarUrl}" style="color:#6B7B8D; text-decoration:underline;">${calendarUrl}</a>
+</td></tr>
+
+<tr><td style="padding-bottom:16px;">
+<span style="font-family:'DM Sans', -apple-system, Helvetica, Arial, sans-serif; font-size:10px; letter-spacing:0.25em; text-transform:uppercase; color:#787362;">Things to know</span>
+</td></tr>
+
+<tr><td style="font-family:'DM Sans', -apple-system, Helvetica, Arial, sans-serif; font-size:16px; line-height:1.7; color:#2C2820; padding-bottom:20px;">
+Your experience will be delivered via text message to the phone number you provided us with on the day. You'll hear from us at ${OUR_NUMBER_DISPLAY} -- save that number to your phone now so our messages come through.
+</td></tr>
+
+<tr><td style="font-family:'DM Sans', -apple-system, Helvetica, Arial, sans-serif; font-size:16px; line-height:1.7; color:#2C2820; padding-bottom:20px;">
+If you need to reschedule your Self Check-In, just let us know at least 24 hours in advance and we'll sort it out.
+</td></tr>
+
+<tr><td style="font-family:'DM Sans', -apple-system, Helvetica, Arial, sans-serif; font-size:16px; line-height:1.7; color:#2C2820; padding-bottom:20px;">
+We'll contact you the evening before to remind you about your Self Check-In and anything you'll need to pack for your day.
+</td></tr>
+
+<tr><td style="font-family:'DM Sans', -apple-system, Helvetica, Arial, sans-serif; font-size:16px; line-height:1.7; color:#2C2820; padding-bottom:36px;">
+If you need additional information about a stop we send you to, there will be a link in the SMS message. We've put together custom venue details -- parking, accessibility, and other useful links -- so click those when they come through.
+</td></tr>
+
+<tr><td style="font-family:'Cormorant Garamond', Georgia, 'Times New Roman', serif; font-weight:500; font-size:20px; line-height:1.5; color:#2C2820; padding-bottom:28px;">
+Can't wait for you to have this day. You deserve it.
+</td></tr>
+
+<tr><td style="font-family:'DM Sans', -apple-system, Helvetica, Arial, sans-serif; font-size:16px; line-height:1.7; color:#2C2820;">
+Amanda &amp; Alicia<br>Self Check-In
+</td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>`;
 
   return { subject, text, html };
 }
