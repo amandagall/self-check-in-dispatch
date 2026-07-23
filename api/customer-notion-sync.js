@@ -398,6 +398,8 @@ function buildPageChildren(data) {
     ['Profile Code', data.profileCode || '[e.g. P05-ANXIOUS-CALM]'],
     ['Tier', data.tier || '[Half-Day / Full-Day]'],
     ['Constraints', data.constraints || 'None'],
+    ['Cross City Routing', data.crossCityRouting || '[Not answered]'],
+    ['Preferred Location (if relevant)', data.preferredLocation || 'N/A'],
     ['Experience Date', data.experienceDate],
     ['Start Time', data.startTime],
     ['End Time', data.endTime],
@@ -486,6 +488,8 @@ function buildPageChildren(data) {
     bulleted(`Estimated start time: ${data.startTime}`),
     bulleted(`Estimated end time: ${data.endTime}`),
     bulleted(`Arc logic: ${data.arc ? data.arc.arcLogic : '[One sentence]'}`),
+    bulleted(`Cross City Routing: ${data.crossCityRouting || '[Not answered]'}`),
+    bulleted(`Preferred Location (if relevant): ${data.preferredLocation || 'N/A'}`),
     bulleted('Anchor booking: [Vendor, time, neutral client-facing line — or None]'),
     bulleted('Packing notes: [Item / Item / Item]'),
     bulleted('Q6 overrides affecting messaging: [e.g. Can\'t drink alcohol / None]'),
@@ -599,6 +603,15 @@ module.exports = async (req, res) => {
       // are real options, this default needs to go, not update to a guess.
       tier: expFields['Tier'] || 'Half Day',
       constraints: fields['Constraints'] || '',
+      // Airtable field name has a trailing space ("Cross City Routing ") --
+      // that's the field as actually created (confirmed via schema lookup),
+      // not a typo to "fix" here. Get this wrong and it silently reads
+      // undefined instead of erroring.
+      crossCityRouting: fields['Cross City Routing '] || '',
+      // "Preferred Experience Location" is conditional in the intake --
+      // customers who chose cross-city routing were never shown this
+      // question, so blank here is an expected, valid state, not missing data.
+      preferredLocation: fields['Preferred Experience Location'] || '',
       experienceDate: formatExperienceDate(fields['Check-In Date']),
       startTime: start,
       endTime: end,
